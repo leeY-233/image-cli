@@ -739,6 +739,153 @@ def _save_images_to_history(
     _append_history(history_records)
 
 
+def _append_images_with_stable_indexes(
+    target: list[GeneratedImage], source: list[GeneratedImage]
+) -> None:
+    for image in source:
+        target.append(
+            GeneratedImage(
+                index=len(target),
+                url=image.url,
+                file=image.file,
+                revised_prompt=image.revised_prompt,
+            )
+        )
+
+
+def _provider_response_summary(provider_json: dict[str, Any]) -> dict[str, Any]:
+    summary = {
+        key: provider_json[key]
+        for key in ("created", "background", "output_format", "quality", "size", "usage")
+        if key in provider_json
+    }
+    data = provider_json.get("data")
+    summary["data_count"] = len(data) if isinstance(data, list) else 0
+    return summary
+
+
+def _combine_provider_responses(
+    provider_responses: list[dict[str, Any]],
+    payload: dict[str, Any],
+    returned_n: int,
+) -> dict[str, Any]:
+    if not provider_responses:
+        return {"requested_n": payload.get("n", 1), "returned_n": returned_n}
+
+    combined = provider_responses[0].copy()
+    combined_data: list[Any] = []
+    qualities: list[str] = []
+    for provider_json in provider_responses:
+        data = provider_json.get("data")
+        if isinstance(data, list):
+            combined_data.extend(data)
+        quality = provider_json.get("quality")
+        if quality:
+            qualities.append(str(quality))
+
+    if qualities:
+        unique_qualities = sorted(set(qualities))
+        combined["quality"] = unique_qualities[0] if len(unique_qualities) == 1 else "mixed"
+    combined["data"] = combined_data
+    combined["requested_n"] = payload.get("n", 1)
+    combined["returned_n"] = returned_n
+    combined["provider_request_count"] = len(provider_responses)
+    combined["provider_response_summaries"] = [
+        _provider_response_summary(provider_json) for provider_json in provider_responses
+    ]
+    return combined
+
+
+async def _request_provider_images(
+    client: httpx.AsyncClient,
+    headers: dict[str, str],
+    provider_payload: dict[str, Any],
+    request_id: str,
+    started_at: float,
+    provider_request_index: int,
+) -> tuple[dict[str, Any], list[GeneratedImage]]:
+    try:
+        response = await _post_with_retry(
+            client, settings.images_url, headers, provider_payload, request_id
+        )
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        detail = _provider_error_detail(exc.response)
+        _log_event(
+            "generate_provider_http_error",
+            request_id=request_id,
+            provider_request_index=provider_request_index,
+            status_code=exc.response.status_code,
+            detail=detail,
+            elapsed_ms=_elapsed_ms(started_at),
+        )
+        raise HTTPException(status_code=exc.response.status_code, detail=detail) from exc
+    except httpx.HTTPError as exc:
+        detail = _provider_request_error_detail(
+            exc, provider_payload, settings.images_url, started_at
+        )
+        _log_event(
+            "generate_provider_request_error",
+            request_id=request_id,
+            provider_request_index=provider_request_index,
+            detail=detail,
+        )
+        raise HTTPException(status_code=502, detail=detail) from exc
+
+    try:
+        provider_json = response.json()
+    except ValueError as exc:
+        detail = _provider_non_json_detail(response, started_at)
+        _log_event(
+            "generate_provider_non_json",
+            request_id=request_id,
+            provider_request_index=provider_request_index,
+            detail=detail,
+        )
+        raise HTTPException(status_code=502, detail=detail) from exc
+
+    _log_event(
+        "generate_provider_response",
+        request_id=request_id,
+        provider_request_index=provider_request_index,
+        status_code=response.status_code,
+        provider_response=_redact_large_payloads(provider_json),
+        elapsed_ms=_elapsed_ms(started_at),
+    )
+
+    try:
+        images = await _normalize_images(provider_json)
+    except HTTPException as exc:
+        _log_event(
+            "generate_normalize_error",
+            request_id=request_id,
+            provider_request_index=provider_request_index,
+            detail=exc.detail,
+            provider_response=_redact_large_payloads(provider_json),
+            elapsed_ms=_elapsed_ms(started_at),
+        )
+        raise
+    except Exception as exc:
+        detail = {
+            "error": {
+                "type": exc.__class__.__name__,
+                "message": str(exc) or repr(exc),
+                "hint": "Provider returned JSON, but local image normalization or saving failed.",
+            },
+            "elapsed_ms": _elapsed_ms(started_at),
+        }
+        _log_event(
+            "generate_normalize_unexpected_error",
+            request_id=request_id,
+            provider_request_index=provider_request_index,
+            detail=detail,
+            provider_response=_redact_large_payloads(provider_json),
+        )
+        raise HTTPException(status_code=502, detail=detail) from exc
+
+    return provider_json, images
+
+
 async def _execute_generation(
     request_id: str,
     payload: dict[str, Any],
@@ -767,69 +914,53 @@ async def _execute_generation(
         client=client_host,
     )
 
-    try:
-        async with httpx.AsyncClient(timeout=settings.timeout_seconds) as client:
-            response = await _post_with_retry(
-                client, settings.images_url, headers, payload, request_id
+    requested_n = max(1, _safe_int(payload.get("n"), 1))
+    provider_responses: list[dict[str, Any]] = []
+    images: list[GeneratedImage] = []
+
+    async with httpx.AsyncClient(timeout=settings.timeout_seconds) as client:
+        provider_json, provider_images = await _request_provider_images(
+            client,
+            headers,
+            payload,
+            request_id,
+            started_at,
+            provider_request_index=1,
+        )
+        provider_responses.append(provider_json)
+        _append_images_with_stable_indexes(images, provider_images)
+
+        missing = requested_n - len(images)
+        if missing > 0:
+            _log_event(
+                "generate_count_shortfall",
+                request_id=request_id,
+                requested_n=requested_n,
+                returned_n=len(images),
+                missing_n=missing,
+                provider_request_index=1,
             )
-            response.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        detail = _provider_error_detail(exc.response)
-        _log_event(
-            "generate_provider_http_error",
-            request_id=request_id,
-            status_code=exc.response.status_code,
-            detail=detail,
-            elapsed_ms=_elapsed_ms(started_at),
-        )
-        raise HTTPException(status_code=exc.response.status_code, detail=detail) from exc
-    except httpx.HTTPError as exc:
-        detail = _provider_request_error_detail(exc, payload, settings.images_url, started_at)
-        _log_event("generate_provider_request_error", request_id=request_id, detail=detail)
-        raise HTTPException(status_code=502, detail=detail) from exc
 
-    try:
-        provider_json = response.json()
-    except ValueError as exc:
-        detail = _provider_non_json_detail(response, started_at)
-        _log_event("generate_provider_non_json", request_id=request_id, detail=detail)
-        raise HTTPException(status_code=502, detail=detail) from exc
+        for offset in range(missing):
+            if len(images) >= requested_n:
+                break
+            single_payload = payload.copy()
+            single_payload["n"] = 1
+            provider_json, provider_images = await _request_provider_images(
+                client,
+                headers,
+                single_payload,
+                request_id,
+                started_at,
+                provider_request_index=offset + 2,
+            )
+            provider_responses.append(provider_json)
+            _append_images_with_stable_indexes(images, provider_images)
 
-    _log_event(
-        "generate_provider_response",
-        request_id=request_id,
-        status_code=response.status_code,
-        provider_response=_redact_large_payloads(provider_json),
-        elapsed_ms=_elapsed_ms(started_at),
-    )
+    if len(images) > requested_n:
+        images = images[:requested_n]
 
-    try:
-        images = await _normalize_images(provider_json)
-    except HTTPException as exc:
-        _log_event(
-            "generate_normalize_error",
-            request_id=request_id,
-            detail=exc.detail,
-            provider_response=_redact_large_payloads(provider_json),
-            elapsed_ms=_elapsed_ms(started_at),
-        )
-        raise
-    except Exception as exc:
-        detail = {
-            "error": {
-                "type": exc.__class__.__name__,
-                "message": str(exc) or repr(exc),
-                "hint": "Provider returned JSON, but local image normalization or saving failed.",
-            },
-            "elapsed_ms": _elapsed_ms(started_at),
-        }
-        _log_event(
-            "generate_normalize_unexpected_error",
-            request_id=request_id,
-            detail=detail,
-            provider_response=_redact_large_payloads(provider_json),
-        )
-        raise HTTPException(status_code=502, detail=detail) from exc
+    provider_json = _combine_provider_responses(provider_responses, payload, len(images))
 
     _save_images_to_history(images, provider_json, payload, prompt, "generate")
 

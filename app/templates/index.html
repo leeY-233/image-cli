@@ -1464,7 +1464,9 @@
         formData.set("size", selectedSize || "1024x1024");
         formData.delete("generate_size");
         const body = Object.fromEntries(formData.entries());
-        body.n = Number(body.n);
+        const countInput = form.querySelector('input[name="n"]');
+        const requestedCount = Number.parseInt(countInput?.value || "1", 10);
+        body.n = Number.isFinite(requestedCount) ? Math.min(10, Math.max(1, requestedCount)) : 1;
         let response;
         let data;
         try {
