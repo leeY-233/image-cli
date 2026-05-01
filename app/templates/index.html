@@ -225,7 +225,7 @@
         gap: 12px;
       }
       .toolbar h2 { margin: 0; font-size: 20px; line-height: 1.2; }
-      .toolbar-actions { display: flex; align-items: center; gap: 10px; }
+      .toolbar-actions { position: relative; display: flex; align-items: center; gap: 10px; }
       .logout {
         color: #566176;
         font-size: 13px;
@@ -246,6 +246,109 @@
         font-weight: 700;
         text-align: right;
         white-space: pre-wrap;
+      }
+      button#status {
+        cursor: pointer;
+        line-height: 1.2;
+      }
+      button#status:hover,
+      button#status:focus {
+        border-color: #aeb9c9;
+        background: #f7f8fa;
+        color: #172033;
+        outline: none;
+      }
+      .job-popover[hidden] { display: none; }
+      .job-popover {
+        position: absolute;
+        right: 44px;
+        top: calc(100% + 10px);
+        z-index: 30;
+        width: min(430px, calc(100vw - 48px));
+        max-height: min(520px, calc(100vh - 120px));
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr);
+        border: 1px solid #c9d2df;
+        border-radius: 8px;
+        background: #ffffff;
+        box-shadow: 0 18px 44px rgba(22, 41, 69, 0.16);
+        overflow: hidden;
+      }
+      .job-popover-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        border-bottom: 1px solid #e5eaf1;
+        padding: 12px 14px;
+      }
+      .job-popover-head strong { font-size: 14px; }
+      .job-list {
+        min-height: 0;
+        display: grid;
+        gap: 8px;
+        overflow-y: auto;
+        padding: 10px;
+      }
+      .job-row {
+        width: 100%;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 10px;
+        border: 1px solid #d8dee9;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #172033;
+        padding: 10px;
+        text-align: left;
+        cursor: pointer;
+      }
+      .job-row:hover,
+      .job-row:focus,
+      .job-row:active {
+        border-color: #aeb9c9;
+        background: #f7f8fa;
+        color: #172033;
+        outline: none;
+      }
+      .job-row-meta { min-width: 0; display: grid; gap: 5px; }
+      .job-row-side { display: flex; align-items: center; gap: 8px; }
+      .job-row-status {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 66px;
+        border: 1px solid #c9d2df;
+        border-radius: 999px;
+        color: #344054;
+        background: #ffffff;
+        padding: 5px 8px;
+        font-size: 12px;
+        font-weight: 800;
+      }
+      .job-row-cancel {
+        width: 28px;
+        height: 28px;
+        min-height: 28px;
+        display: inline-grid;
+        place-items: center;
+        border: 1px solid #fecaca;
+        border-radius: 999px;
+        background: #ffffff;
+        color: #b91c1c;
+        font-size: 18px;
+        font-weight: 900;
+        line-height: 1;
+        padding: 0;
+      }
+      button.job-row-cancel:hover:not(:disabled),
+      button.job-row-cancel:focus:not(:disabled),
+      button.job-row-cancel:active:not(:disabled) {
+        border-color: #fca5a5;
+        background: #fff1f2;
+        color: #991b1b;
+        outline: none;
       }
       #result {
         height: 100%;
@@ -275,26 +378,6 @@
       }
       .panel-title h3 { margin: 0; font-size: 15px; line-height: 1.2; }
       .panel-actions { display: flex; align-items: center; gap: 8px; }
-      .history-tabs {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
-      .history-tab {
-        min-height: auto;
-        border: 1px solid #c9d2df;
-        border-radius: 999px;
-        background: #ffffff;
-        color: #344054;
-        padding: 7px 10px;
-        font-size: 12px;
-        font-weight: 800;
-      }
-      .history-tab.active {
-        border-color: #94a3b8;
-        background: #f7f8fa;
-        color: #172033;
-      }
       #history {
         min-height: 0;
         max-height: none;
@@ -538,6 +621,10 @@
         padding: 9px 12px;
         text-decoration: none;
       }
+      .pill-action[hidden],
+      button[hidden] {
+        display: none;
+      }
       .pill-action:hover,
       .pill-action:focus,
       .pill-action:active,
@@ -604,8 +691,8 @@
                 <label class="choice"><input type="radio" name="generate_size" value="1024x1024" data-ratio="1:1" checked><span><i class="ratio-shape ratio-1-1"></i><strong>1:1</strong><small>Square</small></span><em class="choice-tip">常用于头像、图标、产品主图、社媒图片和电商商品图。实际提交尺寸：1024x1024。</em></label>
                 <label class="choice"><input type="radio" name="generate_size" value="1536x2048" data-ratio="3:4"><span><i class="ratio-shape ratio-3-4"></i><strong>3:4</strong><small>Portrait</small></span><em class="choice-tip">常用于半身人像、竖版海报、商品详情图和偏自然的竖构图。实际提交尺寸：1536x2048。</em></label>
                 <label class="choice"><input type="radio" name="generate_size" value="2048x1536" data-ratio="4:3"><span><i class="ratio-shape ratio-4-3"></i><strong>4:3</strong><small>Classic</small></span><em class="choice-tip">常用于摄影感图片、室内场景、产品横图、文章配图和人物环境照。实际提交尺寸：2048x1536。</em></label>
-                <label class="choice"><input type="radio" name="generate_size" value="1088x1920" data-ratio="9:16"><span><i class="ratio-shape ratio-9-16"></i><strong>9:16</strong><small>Story</small></span><em class="choice-tip">常用于手机壁纸、短视频封面、竖屏海报、角色全身图和社媒 story。实际提交尺寸：1088x1920。</em></label>
-                <label class="choice"><input type="radio" name="generate_size" value="1920x1088" data-ratio="16:9"><span><i class="ratio-shape ratio-16-9"></i><strong>16:9</strong><small>Wide</small></span><em class="choice-tip">常用于宽屏壁纸、视频封面、横屏场景图、电影感画面、建筑和游戏场景。实际提交尺寸：1920x1088。</em></label>
+                <label class="choice"><input type="radio" name="generate_size" value="2160x3840" data-ratio="9:16"><span><i class="ratio-shape ratio-9-16"></i><strong>9:16</strong><small>Story</small></span><em class="choice-tip">常用于手机壁纸、短视频封面、竖屏海报、角色全身图和社媒 story。实际提交尺寸：2160x3840。</em></label>
+                <label class="choice"><input type="radio" name="generate_size" value="3840x2160" data-ratio="16:9"><span><i class="ratio-shape ratio-16-9"></i><strong>16:9</strong><small>Wide</small></span><em class="choice-tip">常用于宽屏壁纸、视频封面、横屏场景图、电影感画面、建筑和游戏场景。实际提交尺寸：3840x2160。</em></label>
                 <label class="choice"><input type="radio" name="generate_size" value="3360x1440" data-ratio="21:9"><span><i class="ratio-shape ratio-21-9"></i><strong>21:9</strong><small>Cinema</small></span><em class="choice-tip">常用于超宽电影感画面、横向环境叙事、游戏概念图、横幅和桌面宽屏壁纸。实际提交尺寸：3360x1440。</em></label>
               </div>
             </div>
@@ -632,7 +719,16 @@
         <div class="toolbar">
           <h2>生成结果</h2>
           <div class="toolbar-actions">
-            <div id="status">Ready</div>
+            <button id="status" type="button">Ready</button>
+            <div class="job-popover" id="jobsPopover" hidden>
+              <div class="job-popover-head">
+                <strong>后台 Job</strong>
+                <button class="pill-action" id="refreshJobs" type="button">刷新</button>
+              </div>
+              <div class="job-list" id="jobList">
+                <div class="empty">暂无后台 Job</div>
+              </div>
+            </div>
             <a class="logout" href="/logout">退出</a>
           </div>
         </div>
@@ -641,12 +737,10 @@
         </div>
         <section class="panel">
           <div class="panel-title">
-            <h3>历史记录</h3>
+            <h3>历史记录 <span class="muted">仅保留最近 30 个，请及时下载</span></h3>
             <div class="panel-actions">
-              <div class="history-tabs" role="tablist" aria-label="历史类型">
-                <button class="history-tab active" data-history-kind="generate" type="button">出图</button>
-              </div>
               <span class="muted" id="historyCount">Loading</span>
+              <button class="pill-action" id="selectAllHistory" type="button" hidden>全选</button>
               <button class="pill-action" id="selectHistory" type="button">选择</button>
               <button class="pill-action" id="downloadSelected" type="button" hidden>下载所选</button>
               <button class="pill-action danger-action" id="deleteSelected" type="button" hidden>删除所选</button>
@@ -674,6 +768,7 @@
           <a class="pill-action" id="modalOpen" href="#">打开原图</a>
           <a class="pill-action" id="modalDownload" href="#" download>下载</a>
           <button class="pill-action" id="modalReuse" type="button">使用此 Prompt</button>
+          <button class="pill-action" id="modalCopyPrompt" type="button">复制 Prompt</button>
         </div>
       </div>
     </div>
@@ -682,11 +777,14 @@
       const result = document.querySelector("#result");
       const history = document.querySelector("#history");
       const historyCount = document.querySelector("#historyCount");
-      const historyTabs = Array.from(document.querySelectorAll(".history-tab"));
+      const selectAllHistory = document.querySelector("#selectAllHistory");
       const selectHistory = document.querySelector("#selectHistory");
       const downloadSelected = document.querySelector("#downloadSelected");
       const deleteSelected = document.querySelector("#deleteSelected");
       const status = document.querySelector("#status");
+      const jobsPopover = document.querySelector("#jobsPopover");
+      const refreshJobs = document.querySelector("#refreshJobs");
+      const jobList = document.querySelector("#jobList");
       const submit = document.querySelector("#submit");
       const promptInput = form.elements.prompt;
       const modal = document.querySelector("#historyModal");
@@ -696,14 +794,13 @@
       const modalOpen = document.querySelector("#modalOpen");
       const modalDownload = document.querySelector("#modalDownload");
       const modalReuse = document.querySelector("#modalReuse");
+      const modalCopyPrompt = document.querySelector("#modalCopyPrompt");
       const modalClose = document.querySelector("#modalClose");
       const sizeTooltip = document.querySelector("#sizeTooltip");
       const sizeRatioMap = {
         "1024x1024": "1:1",
         "1536x2048": "3:4",
         "2048x1536": "4:3",
-        "1088x1920": "9:16",
-        "1920x1088": "16:9",
         "3360x1440": "21:9",
         "1024x1536": "2:3",
         "1536x1024": "3:2",
@@ -712,10 +809,14 @@
       };
       let activeHistoryRecord = null;
       let selectingHistory = false;
-      let activeHistoryKind = "generate";
       let allHistoryRecords = [];
+      let visibleHistoryRecords = [];
       const selectedHistoryIds = new Set();
+      const backgroundJobs = new Map();
       let timer = null;
+      let activePollToken = 0;
+      let watchedJobId = null;
+      let jobsRefreshTimer = null;
       function formatError(data) {
         if (typeof data?.detail === "string") return data.detail;
         if (data?.detail) return JSON.stringify(data.detail, null, 2);
@@ -723,17 +824,17 @@
       }
       function setBusy(message) {
         let seconds = 0;
-        status.textContent = `${message} · ${seconds}s`;
+        status.textContent = decorateStatus(`${message} · ${seconds}s`);
         clearInterval(timer);
         timer = setInterval(() => {
           seconds += 1;
-          status.textContent = `${message} · ${seconds}s`;
+          status.textContent = decorateStatus(`${message} · ${seconds}s`);
         }, 1000);
       }
       function stopBusy(message) {
         clearInterval(timer);
         timer = null;
-        status.textContent = message;
+        status.textContent = decorateStatus(message);
       }
       function formatDate(value) {
         if (!value) return "";
@@ -866,12 +967,47 @@
         promptInput.focus();
         closeHistoryModal();
       });
+      async function copyText(text) {
+        if (navigator.clipboard?.writeText) {
+          await navigator.clipboard.writeText(text);
+          return;
+        }
+        const textarea = document.createElement("textarea");
+        textarea.value = text;
+        textarea.setAttribute("readonly", "");
+        textarea.style.position = "fixed";
+        textarea.style.left = "-9999px";
+        document.body.append(textarea);
+        textarea.select();
+        document.execCommand("copy");
+        textarea.remove();
+      }
+      modalCopyPrompt.addEventListener("click", async () => {
+        if (!activeHistoryRecord) return;
+        const originalText = modalCopyPrompt.textContent;
+        try {
+          await copyText(activeHistoryRecord.prompt || "");
+          modalCopyPrompt.textContent = "已复制";
+          setTimeout(() => {
+            modalCopyPrompt.textContent = originalText;
+          }, 1400);
+        } catch (error) {
+          modalCopyPrompt.textContent = "复制失败";
+          setTimeout(() => {
+            modalCopyPrompt.textContent = originalText;
+          }, 1400);
+        }
+      });
       window.addEventListener("keydown", (event) => {
         if (event.key === "Escape" && !modal.hidden) closeHistoryModal();
       });
       function updateSelectionUi() {
+        const visibleIds = visibleHistoryRecords.map((record) => record.id).filter(Boolean);
+        const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedHistoryIds.has(id));
         history.classList.toggle("selecting", selectingHistory);
         selectHistory.textContent = selectingHistory ? "取消" : "选择";
+        selectAllHistory.hidden = !selectingHistory;
+        selectAllHistory.textContent = allSelected ? "取消全选" : "全选";
         downloadSelected.hidden = !selectingHistory || selectedHistoryIds.size === 0;
         deleteSelected.hidden = !selectingHistory || selectedHistoryIds.size === 0;
         downloadSelected.textContent = `下载所选${selectedHistoryIds.size ? ` (${selectedHistoryIds.size})` : ""}`;
@@ -882,6 +1018,19 @@
         selectedHistoryIds.clear();
         history.querySelectorAll(".history-check").forEach((input) => {
           input.checked = false;
+        });
+        updateSelectionUi();
+      });
+      selectAllHistory.addEventListener("click", () => {
+        const visibleIds = visibleHistoryRecords.map((record) => record.id).filter(Boolean);
+        const allSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedHistoryIds.has(id));
+        if (allSelected) {
+          visibleIds.forEach((id) => selectedHistoryIds.delete(id));
+        } else {
+          visibleIds.forEach((id) => selectedHistoryIds.add(id));
+        }
+        history.querySelectorAll(".history-check").forEach((input) => {
+          input.checked = selectedHistoryIds.has(input.dataset.historyId);
         });
         updateSelectionUi();
       });
@@ -933,6 +1082,7 @@
         button.className = "history-item";
         check.type = "checkbox";
         check.className = "history-check";
+        check.dataset.historyId = record.id;
         check.checked = selectedHistoryIds.has(record.id);
         check.addEventListener("click", (event) => {
           event.stopPropagation();
@@ -963,12 +1113,7 @@
       }
       function renderHistory(records) {
         const visibleRecords = records.filter((record) => !record.operation || record.operation === "generate");
-        const generateCount = visibleRecords.length;
-        historyTabs.forEach((tab) => {
-          const kind = tab.dataset.historyKind;
-          tab.classList.toggle("active", kind === activeHistoryKind);
-          tab.textContent = `出图 ${generateCount}`;
-        });
+        visibleHistoryRecords = visibleRecords;
         historyCount.textContent = `${visibleRecords.length} item${visibleRecords.length === 1 ? "" : "s"}`;
         if (!visibleRecords.length) {
           history.replaceChildren(Object.assign(document.createElement("div"), {
@@ -981,14 +1126,6 @@
         history.replaceChildren(...visibleRecords.map((record) => createHistoryItem(record)));
         updateSelectionUi();
       }
-      historyTabs.forEach((tab) => {
-        tab.addEventListener("click", () => {
-          activeHistoryKind = tab.dataset.historyKind || "generate";
-          selectingHistory = false;
-          selectedHistoryIds.clear();
-          renderHistory(allHistoryRecords);
-        });
-      });
       async function loadHistory() {
         try {
           const response = await fetch("/v1/history");
@@ -1004,7 +1141,196 @@
           }));
         }
       }
-      function showJobState(job, body) {
+      function isActiveJob(job) {
+        return job?.status === "queued" || job?.status === "running";
+      }
+      function bodyFromJob(job) {
+        const payload = job.payload || {};
+        return {
+          prompt: job.prompt || payload.prompt || "",
+          size: payload.size || "",
+          quality: payload.quality || "auto",
+          n: payload.n || 1
+        };
+      }
+      function activeJobLabel(count) {
+        return count ? `后台运行 ${count} 个 Job` : "Ready";
+      }
+      function decorateStatus(message) {
+        const count = backgroundJobs.size;
+        if (!count) return message;
+        if (!watchedJobId && (message === "Ready" || message === "后台任务已完成")) return activeJobLabel(count);
+        return `${message} / 后台 ${count}`;
+      }
+      function refreshIdleStatus() {
+        if (!timer && !watchedJobId) status.textContent = activeJobLabel(backgroundJobs.size);
+      }
+      function promptPreview(job) {
+        const text = bodyFromJob(job).prompt || "无 prompt";
+        return text.length > 64 ? `${text.slice(0, 64)}...` : text;
+      }
+      async function cancelBackgroundJob(job, event) {
+        event?.stopPropagation();
+        try {
+          await fetch(`/v1/jobs/${job.id}/cancel`, { method: "POST" });
+        } finally {
+          backgroundJobs.delete(job.id);
+          renderJobsPopover();
+          await loadHistory();
+        }
+      }
+      function renderJobsPopover() {
+        const jobs = Array.from(backgroundJobs.values()).filter(isActiveJob);
+        backgroundJobs.clear();
+        jobs.forEach((job) => backgroundJobs.set(job.id, job));
+        if (!jobs.length) {
+          jobList.replaceChildren(Object.assign(document.createElement("div"), {
+            className: "empty",
+            textContent: "暂无后台 Job"
+          }));
+          refreshIdleStatus();
+          return;
+        }
+        const nodes = jobs.map((job) => {
+          const row = document.createElement("div");
+          const meta = document.createElement("div");
+          const prompt = document.createElement("div");
+          const detail = document.createElement("div");
+          const side = document.createElement("div");
+          const state = document.createElement("span");
+          const cancel = document.createElement("button");
+          const body = bodyFromJob(job);
+          row.className = "job-row";
+          row.tabIndex = 0;
+          row.setAttribute("role", "button");
+          row.setAttribute("aria-label", "查看后台 Job");
+          meta.className = "job-row-meta";
+          prompt.className = "prompt-line";
+          prompt.title = body.prompt || "";
+          prompt.textContent = promptPreview(job);
+          detail.className = "muted";
+          detail.textContent = [formatSize(body.size), body.quality || "auto", job.id].filter(Boolean).join(" · ");
+          state.className = "job-row-status";
+          state.textContent = job.status || "running";
+          cancel.type = "button";
+          cancel.className = "job-row-cancel";
+          cancel.title = "取消 Job";
+          cancel.setAttribute("aria-label", "取消 Job");
+          cancel.textContent = "×";
+          cancel.addEventListener("click", (event) => cancelBackgroundJob(job, event));
+          side.className = "job-row-side";
+          side.append(state, cancel);
+          meta.append(prompt, detail);
+          row.append(meta, side);
+          row.addEventListener("click", () => enterJob(job));
+          row.addEventListener("keydown", (event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              enterJob(job);
+            }
+          });
+          return row;
+        });
+        jobList.replaceChildren(...nodes);
+        refreshIdleStatus();
+      }
+      function rememberBackgroundJob(job) {
+        if (!isActiveJob(job) || job.id === watchedJobId) return;
+        backgroundJobs.set(job.id, job);
+        renderJobsPopover();
+      }
+      async function refreshBackgroundJobs() {
+        try {
+          const response = await fetch("/v1/jobs");
+          if (!response.ok) return;
+          const data = await response.json();
+          const activeJobs = (data.jobs || []).filter(isActiveJob);
+          const activeIds = new Set(activeJobs.map((job) => job.id));
+          for (const id of Array.from(backgroundJobs.keys())) {
+            if (!activeIds.has(id)) backgroundJobs.delete(id);
+          }
+          activeJobs.forEach((job) => {
+            if (job.id !== watchedJobId) backgroundJobs.set(job.id, job);
+          });
+          renderJobsPopover();
+        } catch (error) {
+          return;
+        }
+      }
+      function toggleJobsPopover() {
+        jobsPopover.hidden = !jobsPopover.hidden;
+        if (!jobsPopover.hidden) refreshBackgroundJobs();
+      }
+      status.addEventListener("click", toggleJobsPopover);
+      refreshJobs.addEventListener("click", refreshBackgroundJobs);
+      document.addEventListener("click", (event) => {
+        if (jobsPopover.hidden) return;
+        if (event.target === status || jobsPopover.contains(event.target)) return;
+        jobsPopover.hidden = true;
+      });
+      function showBackgroundNotice(job) {
+        const state = document.createElement("div");
+        state.className = "empty";
+        state.innerHTML = `
+          <div class="loader">
+            <div>Job 已转入后台运行</div>
+            <div class="muted">${job.id}</div>
+            <div class="muted">你可以继续提交新的 Prompt；完成后会自动刷新历史记录。</div>
+          </div>
+        `;
+        result.replaceChildren(state);
+      }
+      async function pollBackgroundJob(jobId) {
+        let polls = 0;
+        while (backgroundJobs.has(jobId)) {
+          await new Promise((resolve) => setTimeout(resolve, polls < 6 ? 5000 : 10000));
+          polls += 1;
+          try {
+            const response = await fetch(`/v1/jobs/${jobId}`);
+            if (!response.ok) continue;
+            const job = await response.json();
+            if (isActiveJob(job)) {
+              if (job.id !== watchedJobId) backgroundJobs.set(job.id, job);
+              renderJobsPopover();
+              continue;
+            }
+            backgroundJobs.delete(jobId);
+            renderJobsPopover();
+            await loadHistory();
+            if (!watchedJobId) {
+              stopBusy(backgroundJobs.size ? activeJobLabel(backgroundJobs.size) : "后台任务已完成");
+            }
+            return;
+          } catch (error) {
+            continue;
+          }
+        }
+      }
+      function moveJobToBackground(job) {
+        activePollToken += 1;
+        watchedJobId = null;
+        submit.disabled = false;
+        if (!backgroundJobs.has(job.id)) {
+          backgroundJobs.set(job.id, job);
+          pollBackgroundJob(job.id);
+        }
+        renderJobsPopover();
+        stopBusy(activeJobLabel(backgroundJobs.size));
+        showBackgroundNotice(job);
+      }
+      function enterJob(job) {
+        backgroundJobs.delete(job.id);
+        renderJobsPopover();
+        jobsPopover.hidden = true;
+        const token = activePollToken + 1;
+        activePollToken = token;
+        watchedJobId = job.id;
+        submit.disabled = true;
+        setBusy("Generating");
+        showJobState(job, bodyFromJob(job), token);
+        pollJob(job.id, bodyFromJob(job), token);
+      }
+      function showJobState(job, body, token) {
         const state = document.createElement("div");
         state.className = "empty";
         const canCancel = job.status === "queued" || job.status === "running";
@@ -1013,28 +1339,36 @@
             ${canCancel ? '<div class="spinner"></div>' : ""}
             <div>Job ${job.status}</div>
             <div class="muted">${job.id}</div>
-            ${canCancel ? '<button class="pill-action danger-action" type="button">取消生成</button>' : ""}
+            ${canCancel ? '<div class="actions"><button class="pill-action" data-action="background" type="button">后台运行</button><button class="pill-action danger-action" data-action="cancel" type="button">取消生成</button></div>' : ""}
           </div>
         `;
         if (canCancel) {
-          state.querySelector("button").addEventListener("click", async () => {
+          state.querySelector('[data-action="background"]').addEventListener("click", () => {
+            moveJobToBackground(job);
+          });
+          state.querySelector('[data-action="cancel"]').addEventListener("click", async () => {
             await fetch(`/v1/jobs/${job.id}/cancel`, { method: "POST" });
+            if (token !== activePollToken) return;
             stopBusy("Cancelled");
             submit.disabled = false;
-            await pollJob(job.id, body);
+            watchedJobId = null;
+            await pollJob(job.id, body, token);
           });
         }
         result.replaceChildren(state);
       }
-      async function pollJob(jobId, body) {
+      async function pollJob(jobId, body, token) {
         let polls = 0;
         while (true) {
+          if (token !== activePollToken) return;
           const response = await fetch(`/v1/jobs/${jobId}`);
           polls += 1;
           const job = await response.json();
+          if (token !== activePollToken) return;
           if (!response.ok) {
             stopBusy("Failed");
             submit.disabled = false;
+            watchedJobId = null;
             result.replaceChildren(Object.assign(document.createElement("div"), {
               className: "error",
               textContent: `Job 查询失败 (${response.status})：\n${formatError(job)}`
@@ -1042,12 +1376,15 @@
             return;
           }
           if (job.status === "queued" || job.status === "running") {
-            showJobState(job, body);
+            showJobState(job, body, token);
             const delay = polls < 5 ? 2000 : polls < 9 ? 5000 : 10000;
             await new Promise((resolve) => setTimeout(resolve, delay));
             continue;
           }
+          backgroundJobs.delete(jobId);
+          renderJobsPopover();
           submit.disabled = false;
+          watchedJobId = null;
           if (job.status === "cancelled") {
             stopBusy("Cancelled");
             result.replaceChildren(Object.assign(document.createElement("div"), {
@@ -1085,8 +1422,16 @@
         const response = await fetch("/v1/jobs");
         if (!response.ok) return;
         const data = await response.json();
+        (data.jobs || []).filter(isActiveJob).forEach((job) => {
+          backgroundJobs.set(job.id, job);
+        });
         const active = (data.jobs || []).find((job) => job.status === "queued" || job.status === "running");
-        if (!active) return;
+        if (!active) {
+          renderJobsPopover();
+          return;
+        }
+        backgroundJobs.delete(active.id);
+        renderJobsPopover();
           const payload = active.payload || {};
           const body = {
             prompt: active.prompt || payload.prompt || "",
@@ -1094,14 +1439,20 @@
             quality: payload.quality || "auto",
             n: payload.n || 1,
           };
+        const token = activePollToken + 1;
+        activePollToken = token;
+        watchedJobId = active.id;
         setBusy("Generating");
         submit.disabled = true;
-        showJobState(active, body);
-        await pollJob(active.id, body);
+        showJobState(active, body, token);
+        await pollJob(active.id, body, token);
       }
 
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
+        const token = activePollToken + 1;
+        activePollToken = token;
+        watchedJobId = null;
         setBusy("Generating");
         submit.disabled = true;
         const loader = document.createElement("div");
@@ -1126,6 +1477,7 @@
         } catch (error) {
           stopBusy("Failed");
           submit.disabled = false;
+          watchedJobId = null;
           result.replaceChildren(Object.assign(document.createElement("div"), {
             className: "error",
             textContent: `请求失败：${error.message}`
@@ -1135,17 +1487,23 @@
         if (!response.ok) {
           stopBusy("Failed");
           submit.disabled = false;
+          watchedJobId = null;
           result.replaceChildren(Object.assign(document.createElement("div"), {
             className: "error",
             textContent: `生成失败 (${response.status})：\n${formatError(data)}`
           }));
           return;
         }
-        showJobState(data, body);
-        await pollJob(data.id, body);
+        watchedJobId = data.id;
+        backgroundJobs.delete(data.id);
+        renderJobsPopover();
+        showJobState(data, body, token);
+        await pollJob(data.id, body, token);
       });
       loadHistory();
       resumeActiveJob();
+      refreshBackgroundJobs();
+      jobsRefreshTimer = setInterval(refreshBackgroundJobs, 10000);
     </script>
   </body>
 </html>

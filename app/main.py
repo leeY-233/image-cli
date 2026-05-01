@@ -64,8 +64,10 @@ settings.output_dir.mkdir(parents=True, exist_ok=True)
 settings.log_dir.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="Image CLI Web Service", version="0.1.0")
-HISTORY_LIMIT = 200
+HISTORY_LIMIT = 30
 JOB_LIMIT = 100
+MAX_ACTIVE_JOBS = 5
+ACTIVE_JOB_STATUSES = {"queued", "running"}
 JOB_TASKS: dict[str, asyncio.Task] = {}
 
 logger = logging.getLogger("image_cli")
@@ -265,18 +267,34 @@ def _get_job(job_id: str) -> dict[str, Any] | None:
     return None
 
 
-def _upsert_job(job: dict[str, Any]) -> None:
+def _active_job_count_unlocked(jobs: list[dict[str, Any]]) -> int:
+    return sum(1 for job in jobs if job.get("status") in ACTIVE_JOB_STATUSES)
+
+
+def _create_job_with_limit(job: dict[str, Any]) -> None:
     path = _jobs_path()
     with _json_file_lock(path, exclusive=True):
         jobs = _read_json_list_unlocked(path)
-        replaced = False
-        for index, existing in enumerate(jobs):
-            if existing.get("id") == job.get("id"):
-                jobs[index] = job
-                replaced = True
-                break
-        if not replaced:
-            jobs.insert(0, job)
+        active_count = _active_job_count_unlocked(jobs)
+        if active_count >= MAX_ACTIVE_JOBS:
+            _log_event(
+                "job_rejected_active_limit",
+                job_id=job.get("id"),
+                active_count=active_count,
+                max_active_jobs=MAX_ACTIVE_JOBS,
+            )
+            raise HTTPException(
+                status_code=429,
+                detail={
+                    "error": {
+                        "type": "TooManyActiveJobs",
+                        "message": f"最多只能同时运行 {MAX_ACTIVE_JOBS} 个 Job，请等前面的任务完成或取消后再提交。",
+                    },
+                    "active_jobs": active_count,
+                    "max_active_jobs": MAX_ACTIVE_JOBS,
+                },
+            )
+        jobs.insert(0, job)
         jobs.sort(key=lambda item: _safe_int(item.get("created_at")), reverse=True)
         _write_json_list_unlocked(path, jobs[:JOB_LIMIT])
 
@@ -324,10 +342,14 @@ def _normalize_history_record(record: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
-def _normalize_history_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _sort_history_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     normalized = [_normalize_history_record(record) for record in records]
     normalized.sort(key=lambda item: _safe_int(item.get("created_at")), reverse=True)
-    return normalized[:HISTORY_LIMIT]
+    return normalized
+
+
+def _normalize_history_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return _sort_history_records(records)[:HISTORY_LIMIT]
 
 
 def _load_history() -> list[dict[str, Any]]:
@@ -367,7 +389,7 @@ def _append_history(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     path = _history_path()
     with _json_file_lock(path, exclusive=True):
-        history = new_records + _normalize_history_records(_read_json_list_unlocked(path))
+        history = new_records + _sort_history_records(_read_json_list_unlocked(path))
         seen: set[str] = set()
         deduped: list[dict[str, Any]] = []
         for record in history:
@@ -377,15 +399,41 @@ def _append_history(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 continue
             seen.add(dedupe_key)
             deduped.append(record)
-        deduped = _normalize_history_records(deduped)
-        _write_json_list_unlocked(path, deduped)
+        deduped = _sort_history_records(deduped)
+        kept = deduped[:HISTORY_LIMIT]
+        overflow = deduped[HISTORY_LIMIT:]
+        for record in overflow:
+            _delete_history_file(record, preserve_job_references=True)
+        _write_json_list_unlocked(path, kept)
         new_ids = {record["id"] for record in new_records}
-        return [record for record in deduped if record.get("id") in new_ids]
+        return [record for record in kept if record.get("id") in new_ids]
 
 
-def _delete_history_file(record: dict[str, Any]) -> None:
+def _collect_file_urls(value: Any) -> set[str]:
+    if isinstance(value, dict):
+        return set().union(*(_collect_file_urls(item) for item in value.values()))
+    if isinstance(value, list):
+        return set().union(*(_collect_file_urls(item) for item in value))
+    if isinstance(value, str) and value.startswith("/files/"):
+        return {value}
+    return set()
+
+
+def _job_file_references() -> set[str]:
+    return set().union(*(_collect_file_urls(job.get("result")) for job in _load_jobs()))
+
+
+def _delete_history_file(record: dict[str, Any], preserve_job_references: bool = False) -> None:
     file_url = str(record.get("file") or "")
     if file_url.startswith("/files/"):
+        if preserve_job_references and file_url in _job_file_references():
+            _log_event(
+                "history_overflow_file_preserved",
+                history_id=record.get("id"),
+                file=file_url,
+                reason="referenced_by_job_result",
+            )
+            return
         file_path = settings.output_dir / Path(file_url.removeprefix("/files/")).name
         try:
             file_path.unlink(missing_ok=True)
@@ -634,7 +682,9 @@ def _provider_response_preview(response: httpx.Response) -> Any:
 
 
 def _is_retryable_provider_response(response: httpx.Response) -> bool:
-    if response.status_code not in {500, 502, 503, 504}:
+    if response.status_code in {502, 503, 504}:
+        return True
+    if response.status_code != 500:
         return False
 
     detail = _provider_response_preview(response)
@@ -732,12 +782,10 @@ async def _execute_generation(
             detail=detail,
             elapsed_ms=_elapsed_ms(started_at),
         )
-        print(f"Provider returned {exc.response.status_code}: {detail}")
         raise HTTPException(status_code=exc.response.status_code, detail=detail) from exc
     except httpx.HTTPError as exc:
         detail = _provider_request_error_detail(exc, payload, settings.images_url, started_at)
         _log_event("generate_provider_request_error", request_id=request_id, detail=detail)
-        print(f"Provider request failed: {exc!r}")
         raise HTTPException(status_code=502, detail=detail) from exc
 
     try:
@@ -745,7 +793,6 @@ async def _execute_generation(
     except ValueError as exc:
         detail = _provider_non_json_detail(response, started_at)
         _log_event("generate_provider_non_json", request_id=request_id, detail=detail)
-        print(f"Provider returned non-JSON response: {response.text[:1000]}")
         raise HTTPException(status_code=502, detail=detail) from exc
 
     _log_event(
@@ -898,7 +945,7 @@ async def create_job(request: Request, generation: GenerateImageRequest) -> dict
         "created_at": now,
         "updated_at": now,
     }
-    _upsert_job(job)
+    _create_job_with_limit(job)
     task = asyncio.create_task(_run_generation_job(job_id))
     JOB_TASKS[job_id] = task
     _log_event("job_created", job_id=job_id, request_id=job_id, payload=payload)
@@ -949,166 +996,12 @@ async def generate_image(
     request_id = uuid.uuid4().hex
     started_at = time.monotonic()
     _require_auth(http_request)
-    if not settings.api_key:
-        _log_event(
-            "generate_config_error",
-            request_id=request_id,
-            detail="OPENAI_API_KEY is not configured",
-        )
-        raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not configured")
-
-    payload: dict[str, Any] = {
-        "model": request.model or settings.model,
-        "prompt": request.prompt,
-        "size": request.size or settings.image_size,
-        "quality": request.quality or settings.image_quality,
-        "n": request.n,
-        "response_format": request.response_format or settings.response_format,
-    }
-    payload.update(request.extra)
-
-    headers = {
-        "Authorization": f"Bearer {settings.api_key}",
-        "Content-Type": "application/json",
-    }
-
-    _log_event(
-        "generate_start",
+    return await _execute_generation(
         request_id=request_id,
-        provider_url=settings.images_url,
-        payload=payload,
-        client=http_request.client.host if http_request.client else None,
-    )
-
-    try:
-        async with httpx.AsyncClient(timeout=settings.timeout_seconds) as client:
-            response = await _post_with_retry(
-                client, settings.images_url, headers, payload, request_id
-            )
-            response.raise_for_status()
-    except httpx.HTTPStatusError as exc:
-        detail = _provider_error_detail(exc.response)
-        _log_event(
-            "generate_provider_http_error",
-            request_id=request_id,
-            status_code=exc.response.status_code,
-            detail=detail,
-            elapsed_ms=_elapsed_ms(started_at),
-        )
-        print(f"Provider returned {exc.response.status_code}: {detail}")
-        raise HTTPException(status_code=exc.response.status_code, detail=detail) from exc
-    except httpx.HTTPError as exc:
-        detail = {
-            "error": {
-                "type": exc.__class__.__name__,
-                "message": str(exc) or repr(exc),
-                "hint": "上游请求失败，常见原因是 provider 超时、断流、DNS/TLS/网络异常。",
-            },
-            "request": {
-                "model": payload["model"],
-                "size": payload["size"],
-                "quality": payload["quality"],
-                "n": payload["n"],
-            },
-            "provider_url": settings.images_url,
-            "elapsed_ms": _elapsed_ms(started_at),
-        }
-        _log_event("generate_provider_request_error", request_id=request_id, detail=detail)
-        print(f"Provider request failed: {exc!r}")
-        raise HTTPException(status_code=502, detail=detail) from exc
-
-    try:
-        provider_json = response.json()
-    except ValueError as exc:
-        detail = {
-            "error": {
-                "type": "ProviderNonJsonResponse",
-                "message": "Provider returned non-JSON response",
-            },
-            "status_code": response.status_code,
-            "body_preview": response.text[:2000],
-            "elapsed_ms": _elapsed_ms(started_at),
-        }
-        _log_event("generate_provider_non_json", request_id=request_id, detail=detail)
-        print(f"Provider returned non-JSON response: {response.text[:1000]}")
-        raise HTTPException(status_code=502, detail=detail) from exc
-
-    _log_event(
-        "generate_provider_response",
-        request_id=request_id,
-        status_code=response.status_code,
-        provider_response=_redact_large_payloads(provider_json),
-        elapsed_ms=_elapsed_ms(started_at),
-    )
-
-    try:
-        images = await _normalize_images(provider_json)
-    except HTTPException as exc:
-        _log_event(
-            "generate_normalize_error",
-            request_id=request_id,
-            detail=exc.detail,
-            provider_response=_redact_large_payloads(provider_json),
-            elapsed_ms=_elapsed_ms(started_at),
-        )
-        raise
-    except Exception as exc:
-        detail = {
-            "error": {
-                "type": exc.__class__.__name__,
-                "message": str(exc) or repr(exc),
-                "hint": "Provider returned JSON, but local image normalization or saving failed.",
-            },
-            "elapsed_ms": _elapsed_ms(started_at),
-        }
-        _log_event(
-            "generate_normalize_unexpected_error",
-            request_id=request_id,
-            detail=detail,
-            provider_response=_redact_large_payloads(provider_json),
-        )
-        raise HTTPException(status_code=502, detail=detail) from exc
-    now = int(time.time())
-    requested_quality = str(payload["quality"])
-    effective_quality = str(provider_json.get("quality") or payload["quality"])
-    history_records = [
-        {
-            "file": image.file,
-            "url": image.url,
-            "prompt": request.prompt,
-            "revised_prompt": image.revised_prompt,
-            "size": payload["size"],
-            "quality": effective_quality,
-            "requested_quality": requested_quality,
-            "actual_quality": effective_quality,
-            "model": payload["model"],
-            "created_at": now,
-        }
-        for image in images
-        if image.file or image.url
-    ]
-    _append_history(history_records)
-
-    _log_event(
-        "generate_success",
-        request_id=request_id,
-        elapsed_ms=_elapsed_ms(started_at),
-        request=payload,
-        provider_quality=provider_json.get("quality"),
-        images=[
-            {
-                "file": image.file,
-                "url": image.url,
-                "revised_prompt": image.revised_prompt,
-            }
-            for image in images
-        ],
-    )
-
-    return GenerateImageResponse(
-        model=payload["model"],
-        images=images,
-        provider_response=_redact_large_payloads(provider_json),
+        payload=_payload_from_request(request),
+        prompt=request.prompt,
+        started_at=started_at,
+        client_host=http_request.client.host if http_request.client else None,
     )
 
 
@@ -1159,7 +1052,6 @@ async def _post_with_retry(
                 error_type=exc.__class__.__name__,
                 error_message=str(exc) or repr(exc),
             )
-            print(f"Provider request attempt {attempt + 1} failed: {exc!r}")
             if attempt < settings.provider_max_attempts - 1:
                 await asyncio.sleep(_retry_delay_seconds(attempt))
     if last_error is None:
@@ -1214,7 +1106,23 @@ async def _download_image(client: httpx.AsyncClient, url: str, index: int) -> st
     try:
         response = await client.get(url)
         response.raise_for_status()
-    except httpx.HTTPError:
+    except httpx.HTTPStatusError as exc:
+        _log_event(
+            "image_download_failed",
+            url=url,
+            index=index,
+            status_code=exc.response.status_code,
+            detail=_provider_response_preview(exc.response),
+        )
+        return ""
+    except httpx.HTTPError as exc:
+        _log_event(
+            "image_download_failed",
+            url=url,
+            index=index,
+            error_type=exc.__class__.__name__,
+            error_message=str(exc) or repr(exc),
+        )
         return ""
 
     content_type = response.headers.get("content-type", "")
