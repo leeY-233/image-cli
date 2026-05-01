@@ -1,17 +1,21 @@
 # gpt-image-2 Web Service
 
-一个自用的 FastAPI 图片生成 Web 服务，用 OpenAI 兼容接口调用第三方供应商的 `gpt-image-2` 模型。
+一个自用的 FastAPI 图片生成 Web 服务，通过 OpenAI 兼容接口调用第三方供应商的 `gpt-image-2` 模型。当前版本专注于稳定的文生图工作流，暂不包含图片编辑功能。
 
-项目重点：
+## 功能
 
-- 密码登录，不需要账号。
-- 网页生成图片，左侧参数，右侧结果。
-- 支持历史出图、历史 prompt、弹窗预览原图。
-- 历史记录懒加载，打开网页时不会自动下载所有历史图片。
+- 密码登录：只需要密码，不需要账户。
+- 文生图 Web UI：左侧参数，右侧生成结果和历史记录。
+- 支持 6 个常用比例：`1:1`、`3:4`、`4:3`、`9:16`、`16:9`、`21:9`。
+- 支持 `auto`、`high`、`medium`、`low` 质量选项。
+- Job 模式：关闭浏览器后，后端任务仍会继续执行。
+- 前端可取消本地 Job。若请求已经发给上游，provider 仍可能在远端继续完成。
+- 历史记录持久化：刷新页面后仍可查看历史出图和 prompt。
+- 历史图片懒加载：打开网页时只加载元数据，不会一次性下载所有历史图片。
+- 历史记录弹窗预览、打开原图、下载、复用 prompt。
 - 支持勾选历史记录后批量删除、批量下载 ZIP。
-- 支持 Job 模式：关闭浏览器后生成任务仍会继续跑。
-- 支持在前端取消生成任务。取消是本地取消，如果请求已经发到上游，provider 仍可能继续完成。
-- 日志会记录请求参数、上游返回、异常和耗时，方便排查失败原因。
+- 日志记录完整请求参数、上游返回、异常、重试和耗时，方便排查失败原因。
+- JSON 历史和 Job 文件读写带文件锁，降低并发写入导致的数据损坏风险。
 
 ## 快速开始
 
@@ -35,6 +39,7 @@ IMAGE_RESPONSE_FORMAT=b64_json
 OUTPUT_DIR=outputs
 LOG_DIR=logs
 REQUEST_TIMEOUT_SECONDS=600
+PROVIDER_MAX_ATTEMPTS=2
 
 APP_PASSWORD=你的登录密码
 APP_SESSION_SECRET=换成一串足够长的随机字符串
@@ -64,20 +69,29 @@ http://127.0.0.1:8000
 | `IMAGE_SIZE` | 默认图片尺寸 | `1024x1024` |
 | `IMAGE_QUALITY` | 默认质量 | `auto` |
 | `IMAGE_RESPONSE_FORMAT` | 上游返回格式 | `b64_json` 或 `url` |
-| `OUTPUT_DIR` | 图片、历史和 job 数据保存目录 | `outputs` |
+| `OUTPUT_DIR` | 图片、历史和 Job 数据保存目录 | `outputs` |
 | `LOG_DIR` | 日志目录 | `logs` |
 | `REQUEST_TIMEOUT_SECONDS` | 上游请求超时时间 | `600` |
+| `PROVIDER_MAX_ATTEMPTS` | 上游 5xx、超时、断流错误最大尝试次数 | `2` |
 | `APP_PASSWORD` | Web 登录密码 | 自行设置 |
 | `APP_SESSION_SECRET` | Cookie 签名密钥 | 随机长字符串 |
 
-## Web 功能
+如果 `APP_PASSWORD` 或 `APP_SESSION_SECRET` 没有设置，登录鉴权会关闭，启动时会写入一条 `auth_disabled_warning` 日志。
 
-当前网页支持这些尺寸：
+## 比例和尺寸
 
-- `1024x1024`：方图，适合头像、图标、产品主图、社媒图。
-- `1536x1024`：横图，适合风景、摄影感图片、文章配图、产品横幅。
-- `1024x1536`：竖图，适合人物写真、竖版海报、手机壁纸、角色图。
-- `3840x2160`：4K 宽屏，适合壁纸、视频封面、电影感场景图。
+网页里展示的是比例，实际提交给 provider 的仍然是具体尺寸：
+
+| 比例 | 实际尺寸 | 常见用途 |
+| --- | --- | --- |
+| `1:1` | `1024x1024` | 头像、图标、产品主图、社媒图片 |
+| `3:4` | `1536x2048` | 半身人像、竖版海报、商品详情图 |
+| `4:3` | `2048x1536` | 摄影感图片、室内场景、文章配图 |
+| `9:16` | `1088x1920` | 手机壁纸、短视频封面、竖屏海报 |
+| `16:9` | `1920x1088` | 宽屏壁纸、视频封面、横屏场景图 |
+| `21:9` | `3360x1440` | 超宽电影感画面、游戏概念图、横幅 |
+
+`9:16` 和 `16:9` 使用 `1088` 而不是 `1080`，是因为当前 provider 要求宽高都能被 `16` 整除。
 
 质量选项：
 
@@ -86,15 +100,15 @@ http://127.0.0.1:8000
 - `medium`
 - `low`
 
-注意：历史记录里会分别展示“选择的质量”和“provider 实际返回的质量”。有些上游服务可能会把你选择的质量自动调整成其他值。
+历史记录里会分别展示“选择的质量”和“provider 实际返回的质量”。有些上游服务可能会自动调整实际质量。
 
-## 生成任务
+## Job 模式
 
 网页默认使用 Job 模式发起生成：
 
 1. 前端调用 `POST /v1/jobs` 创建任务。
 2. 后端在后台执行图片生成。
-3. 前端定时调用 `GET /v1/jobs/{job_id}` 查看进度。
+3. 前端轮询 `GET /v1/jobs/{job_id}` 查看进度。
 4. 关闭浏览器不会取消任务，重新打开网页后会继续显示未完成任务。
 
 取消任务：
@@ -107,7 +121,7 @@ curl -X POST http://127.0.0.1:8000/v1/jobs/JOB_ID/cancel
 
 - 如果任务还没真正发给上游，可以直接本地取消。
 - 如果请求已经发给上游，当前只会取消本地等待，上游 provider 可能仍会继续生成。
-- 目前没有依赖 provider 的远程取消接口。
+- 当前没有依赖 provider 的远程取消接口。
 
 ## 历史记录
 
@@ -132,7 +146,7 @@ outputs/
 - 勾选后批量删除。
 - 勾选后批量下载 ZIP。
 
-批量下载的 ZIP 里会包含图片和对应的 `prompt.txt`。
+历史记录使用稳定 UUID 作为 ID。批量下载的 ZIP 里会包含图片和对应的 `prompt.txt`。
 
 ## 日志
 
@@ -150,13 +164,14 @@ tail -f logs/app.log
 
 日志是 JSONL 格式，每行一个事件。会记录：
 
-- 创建 job。
+- 创建 Job。
 - 开始生成。
 - 发给 provider 的参数。
 - provider HTTP 状态码。
 - provider 返回内容。
 - provider 报错内容。
 - 网络、TLS、超时、断流等异常。
+- 重试次数和重试原因。
 - 图片保存结果。
 - 总耗时。
 
@@ -182,6 +197,12 @@ curl -c cookies.txt -X POST http://127.0.0.1:8000/login \
 
 ```bash
 -b cookies.txt
+```
+
+### 健康检查
+
+```bash
+curl http://127.0.0.1:8000/health
 ```
 
 ### 立即生成
@@ -223,7 +244,7 @@ curl -X POST http://127.0.0.1:8000/v1/jobs \
   -H "Content-Type: application/json" \
   -d '{
     "prompt": "一张电影感的雪山日出，超清细节",
-    "size": "3840x2160",
+    "size": "1920x1088",
     "quality": "auto",
     "n": 1
   }'
@@ -235,10 +256,28 @@ curl -X POST http://127.0.0.1:8000/v1/jobs \
 curl -b cookies.txt http://127.0.0.1:8000/v1/jobs/JOB_ID
 ```
 
+### 取消 Job
+
+```bash
+curl -X POST -b cookies.txt http://127.0.0.1:8000/v1/jobs/JOB_ID/cancel
+```
+
 ### 查看历史
 
 ```bash
 curl -b cookies.txt http://127.0.0.1:8000/v1/history
+```
+
+### 查看历史详情
+
+```bash
+curl -b cookies.txt http://127.0.0.1:8000/v1/history/HISTORY_UUID
+```
+
+### 删除单条历史
+
+```bash
+curl -X DELETE -b cookies.txt http://127.0.0.1:8000/v1/history/HISTORY_UUID
 ```
 
 ### 批量删除历史
@@ -247,7 +286,7 @@ curl -b cookies.txt http://127.0.0.1:8000/v1/history
 curl -X POST http://127.0.0.1:8000/v1/history/delete \
   -b cookies.txt \
   -H "Content-Type: application/json" \
-  -d '{"ids":[0,1,2]}'
+  -d '{"ids":["history_uuid_1","history_uuid_2"]}'
 ```
 
 ### 批量下载历史
@@ -256,7 +295,7 @@ curl -X POST http://127.0.0.1:8000/v1/history/delete \
 curl -X POST http://127.0.0.1:8000/v1/history/download \
   -b cookies.txt \
   -H "Content-Type: application/json" \
-  -d '{"ids":[0,1,2]}' \
+  -d '{"ids":["history_uuid_1","history_uuid_2"]}' \
   -o history-images.zip
 ```
 
@@ -267,6 +306,7 @@ curl -X POST http://127.0.0.1:8000/v1/history/download \
 - 默认要求 provider 返回 `b64_json`，服务会保存到 `outputs/` 并通过 `/files/...` 访问。
 - 如果 provider 返回 `url`，服务会尝试下载图片并保存；下载失败时仍会返回原始 URL。
 - 请求体里的 `extra` 字段会合并到上游请求，可用于传 provider 的额外参数。
+- 当前版本不接入 `/images/edits`，只保留文生图。
 
 示例：
 
@@ -329,8 +369,6 @@ server {
 
     ssl_certificate /etc/letsencrypt/live/image.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/image.example.com/privkey.pem;
-
-    client_max_body_size 50m;
 
     location / {
         proxy_pass http://127.0.0.1:8000;
