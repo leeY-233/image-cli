@@ -42,6 +42,9 @@ class Settings(BaseModel):
     model: str = Field(default_factory=lambda: os.getenv("IMAGE_MODEL", "gpt-image-2"))
     image_size: str = Field(default_factory=lambda: os.getenv("IMAGE_SIZE", "1024x1024"))
     image_quality: str = Field(default_factory=lambda: os.getenv("IMAGE_QUALITY", "auto"))
+    image_output_format: str = Field(
+        default_factory=lambda: os.getenv("IMAGE_OUTPUT_FORMAT", "png")
+    )
     response_format: str = Field(
         default_factory=lambda: os.getenv("IMAGE_RESPONSE_FORMAT", "b64_json")
     )
@@ -77,6 +80,9 @@ JOB_LIMIT = 100
 MAX_ACTIVE_JOBS = 5
 ACTIVE_JOB_STATUSES = {"queued", "running"}
 JOB_TASKS: dict[str, asyncio.Task] = {}
+MIN_IMAGE_DIMENSION = 16
+MAX_IMAGE_DIMENSION = 4096
+MAX_IMAGE_PIXELS = 3840 * 2160
 
 logger = logging.getLogger("image_cli")
 logger.setLevel(logging.INFO)
@@ -112,6 +118,7 @@ class GenerateImageRequest(BaseModel):
     model: str | None = None
     size: str | None = None
     quality: str | None = None
+    output_format: Literal["png", "jpeg", "webp"] | None = None
     n: int = Field(default=1, ge=1, le=10)
     response_format: Literal["b64_json", "url"] | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
@@ -148,6 +155,53 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _parse_size(size: str) -> tuple[int, int] | None:
+    width_text, separator, height_text = size.lower().partition("x")
+    if separator != "x":
+        return None
+    try:
+        width = int(width_text)
+        height = int(height_text)
+    except ValueError:
+        return None
+    return width, height
+
+
+def _validate_size_budget(size: str) -> None:
+    if size == "auto":
+        return
+    parsed = _parse_size(size)
+    if parsed is None:
+        return
+    width, height = parsed
+    if (
+        width < MIN_IMAGE_DIMENSION
+        or height < MIN_IMAGE_DIMENSION
+        or width > MAX_IMAGE_DIMENSION
+        or height > MAX_IMAGE_DIMENSION
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invalid size '{size}'. Width and height must be between "
+                f"{MIN_IMAGE_DIMENSION} and {MAX_IMAGE_DIMENSION}."
+            ),
+        )
+    if width % 16 != 0 or height % 16 != 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid size '{size}'. Width and height must both be divisible by 16.",
+        )
+    if width * height > MAX_IMAGE_PIXELS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invalid size '{size}'. Requested resolution exceeds the current pixel "
+                f"budget of {MAX_IMAGE_PIXELS:,} pixels."
+            ),
+        )
 
 
 @contextmanager
@@ -487,6 +541,7 @@ def _normalize_history_record(record: dict[str, Any]) -> dict[str, Any]:
     normalized.setdefault("quality", "")
     normalized.setdefault("requested_quality", "")
     normalized.setdefault("actual_quality", "")
+    normalized.setdefault("output_format", "")
     normalized.setdefault("operation", "generate")
     normalized.setdefault("status", "succeeded")
     normalized.setdefault("error", None)
@@ -521,6 +576,7 @@ def _history_public(record: dict[str, Any]) -> dict[str, Any]:
         "quality": actual_quality,
         "requested_quality": requested_quality,
         "actual_quality": actual_quality,
+        "output_format": record.get("output_format", ""),
         "model": record.get("model", ""),
         "operation": record.get("operation", "generate"),
         "status": record.get("status", "succeeded"),
@@ -820,11 +876,14 @@ async def download_history_batch(request: Request) -> FileResponse:
 
 
 def _payload_from_request(request: GenerateImageRequest) -> dict[str, Any]:
+    size = request.size or settings.image_size
+    _validate_size_budget(size)
     payload: dict[str, Any] = {
         "model": request.model or settings.model,
         "prompt": request.prompt,
-        "size": request.size or settings.image_size,
+        "size": size,
         "quality": request.quality or settings.image_quality,
+        "output_format": request.output_format or settings.image_output_format,
         "n": request.n,
         "response_format": request.response_format or settings.response_format,
     }
@@ -921,6 +980,7 @@ def _save_images_to_history(
             "quality": effective_quality,
             "requested_quality": requested_quality,
             "actual_quality": effective_quality,
+            "output_format": provider_json.get("output_format") or payload.get("output_format", ""),
             "model": payload["model"],
             "operation": operation,
             "source_file": source_file,
@@ -949,6 +1009,7 @@ def _save_failure_to_history(
                 "quality": payload.get("quality", ""),
                 "requested_quality": payload.get("quality", ""),
                 "actual_quality": "",
+                "output_format": payload.get("output_format", ""),
                 "model": payload.get("model", settings.model),
                 "operation": "generate",
                 "status": "failed",
@@ -1075,7 +1136,10 @@ async def _request_provider_images(
     )
 
     try:
-        images = await _normalize_images(provider_json)
+        images = await _normalize_images(
+            provider_json,
+            str(provider_payload.get("output_format") or "png"),
+        )
     except HTTPException as exc:
         _log_event(
             "generate_normalize_error",
@@ -1415,12 +1479,15 @@ async def _post_with_retry(
     raise last_error
 
 
-async def _normalize_images(provider_json: dict[str, Any]) -> list[GeneratedImage]:
+async def _normalize_images(
+    provider_json: dict[str, Any], fallback_output_format: str = "png"
+) -> list[GeneratedImage]:
     data = provider_json.get("data")
     if not isinstance(data, list):
         raise HTTPException(status_code=502, detail="Provider response missing data array")
 
     images: list[GeneratedImage] = []
+    output_format = str(provider_json.get("output_format") or fallback_output_format or "png")
     async with httpx.AsyncClient(timeout=settings.timeout_seconds) as client:
         for index, item in enumerate(data):
             if not isinstance(item, dict):
@@ -1428,7 +1495,7 @@ async def _normalize_images(provider_json: dict[str, Any]) -> list[GeneratedImag
 
             file_url = None
             if item.get("b64_json"):
-                file_url = _save_b64_image(str(item["b64_json"]), index)
+                file_url = _save_b64_image(str(item["b64_json"]), index, output_format)
             elif item.get("url"):
                 file_url = await _download_image(client, str(item["url"]), index)
 
@@ -1444,13 +1511,21 @@ async def _normalize_images(provider_json: dict[str, Any]) -> list[GeneratedImag
     return images
 
 
-def _save_b64_image(b64_json: str, index: int) -> str:
+def _image_suffix_from_format(output_format: str) -> str:
+    if output_format == "jpeg":
+        return ".jpg"
+    if output_format == "webp":
+        return ".webp"
+    return ".png"
+
+
+def _save_b64_image(b64_json: str, index: int, output_format: str = "png") -> str:
     try:
         image_bytes = base64.b64decode(b64_json)
     except binascii.Error as exc:
         raise HTTPException(status_code=502, detail="Provider returned invalid base64") from exc
 
-    filename = f"{uuid.uuid4().hex}-{index}.png"
+    filename = f"{uuid.uuid4().hex}-{index}{_image_suffix_from_format(output_format)}"
     output_path = settings.output_dir / filename
     output_path.write_bytes(image_bytes)
     return f"/files/{filename}"

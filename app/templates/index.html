@@ -213,6 +213,7 @@
         gap: 3px;
       }
       .ratio-btn {
+        position: relative;
         padding: 8px 4px 6px;
         background: var(--bg-input);
         border: 1px solid var(--border);
@@ -227,6 +228,30 @@
         display: grid;
         place-items: center;
         gap: 4px;
+      }
+      .ratio-btn::after {
+        content: attr(data-size-label);
+        position: absolute;
+        left: 50%;
+        bottom: calc(100% + 7px);
+        z-index: 20;
+        transform: translate(-50%, 4px);
+        padding: 4px 7px;
+        background: var(--text);
+        border-radius: 5px;
+        color: #fff;
+        font-size: 10px;
+        font-family: var(--font-mono);
+        font-weight: 500;
+        line-height: 1.2;
+        white-space: nowrap;
+        opacity: 0;
+        pointer-events: none;
+        transition: opacity 0.15s, transform 0.15s;
+      }
+      .ratio-btn:hover::after {
+        opacity: 1;
+        transform: translate(-50%, 0);
       }
       .ratio-btn:hover {
         background: var(--bg-elevated);
@@ -254,6 +279,49 @@
       .ratio-9-16 { width: 9px; }
       .ratio-16-9 { width: 28px; }
       .ratio-21-9 { width: 36px; max-width: 100%; }
+      .ratio-custom { width: 24px; border-style: dashed; }
+
+      .custom-size-row {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .custom-size-row[hidden] { display: none; }
+      .custom-size-input {
+        width: 100%;
+        padding: 7px 10px;
+        background: var(--bg-input);
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 500;
+        outline: none;
+        transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
+      }
+      .custom-size-input:hover { border-color: var(--border-hover); background: #fff; }
+      .custom-size-input:focus {
+        border-color: var(--border-focus);
+        box-shadow: 0 0 0 3px var(--accent-glow);
+        background: #fff;
+      }
+      .custom-size-input.invalid {
+        border-color: var(--danger);
+        background: var(--danger-bg);
+        color: var(--danger);
+      }
+      .custom-size-input.invalid:focus {
+        border-color: var(--danger);
+        box-shadow: 0 0 0 3px rgba(229, 72, 77, 0.12);
+      }
+      .custom-size-hint {
+        margin-top: 6px;
+        color: var(--danger);
+        font-size: 11px;
+        line-height: 1.4;
+      }
+      .custom-size-hint[hidden] { display: none; }
 
       .count-row {
         display: grid;
@@ -933,25 +1001,33 @@
           <div class="field">
             <div class="field-label">Aspect Ratio</div>
             <div class="ratio-grid" id="ratioGrid">
-              <button type="button" class="ratio-btn active" data-value="1024x1024" data-ratio="1:1">
+              <button type="button" class="ratio-btn active" data-value="1024x1024" data-ratio="1:1" data-size-label="1024x1024">
                 <i class="ratio-shape ratio-1-1"></i>1:1
               </button>
-              <button type="button" class="ratio-btn" data-value="1536x2048" data-ratio="3:4">
+              <button type="button" class="ratio-btn" data-value="768x1024" data-ratio="3:4" data-size-label="768x1024">
                 <i class="ratio-shape ratio-3-4"></i>3:4
               </button>
-              <button type="button" class="ratio-btn" data-value="2048x1536" data-ratio="4:3">
+              <button type="button" class="ratio-btn" data-value="1024x768" data-ratio="4:3" data-size-label="1024x768">
                 <i class="ratio-shape ratio-4-3"></i>4:3
               </button>
-              <button type="button" class="ratio-btn" data-value="2160x3840" data-ratio="9:16">
+              <button type="button" class="ratio-btn" data-value="1152x2048" data-ratio="9:16" data-size-label="1152x2048">
                 <i class="ratio-shape ratio-9-16"></i>9:16
               </button>
-              <button type="button" class="ratio-btn" data-value="3840x2160" data-ratio="16:9">
+              <button type="button" class="ratio-btn" data-value="2048x1152" data-ratio="16:9" data-size-label="2048x1152">
                 <i class="ratio-shape ratio-16-9"></i>16:9
               </button>
-              <button type="button" class="ratio-btn" data-value="3360x1440" data-ratio="21:9">
+              <button type="button" class="ratio-btn" data-value="3840x1648" data-ratio="21:9" data-size-label="3840x1648">
                 <i class="ratio-shape ratio-21-9"></i>21:9
               </button>
+              <button type="button" class="ratio-btn" data-value="custom" data-ratio="custom" data-size-label="Custom size">
+                <i class="ratio-shape ratio-custom"></i>Custom
+              </button>
             </div>
+            <div class="custom-size-row" id="customSizeRow" hidden>
+              <input class="custom-size-input" id="customWidth" type="number" min="16" max="4096" step="16" value="1024" aria-label="Custom width" />
+              <input class="custom-size-input" id="customHeight" type="number" min="16" max="4096" step="16" value="1024" aria-label="Custom height" />
+            </div>
+            <div class="custom-size-hint" id="customSizeHint" hidden></div>
           </div>
           <div class="field">
             <div class="field-label">Quality</div>
@@ -960,6 +1036,14 @@
               <button type="button" class="seg-btn" data-value="high">high</button>
               <button type="button" class="seg-btn" data-value="medium">medium</button>
               <button type="button" class="seg-btn" data-value="low">low</button>
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-label">Format</div>
+            <div class="segmented" id="outputFormatSeg">
+              <button type="button" class="seg-btn active" data-value="png">png</button>
+              <button type="button" class="seg-btn" data-value="jpeg">jpeg</button>
+              <button type="button" class="seg-btn" data-value="webp">webp</button>
             </div>
           </div>
           <div class="field count-row">
@@ -1064,7 +1148,12 @@
       const submit = document.querySelector("#submit");
       const promptInput = form.elements.prompt;
       const ratioGrid = document.querySelector("#ratioGrid");
+      const customSizeRow = document.querySelector("#customSizeRow");
+      const customWidth = document.querySelector("#customWidth");
+      const customHeight = document.querySelector("#customHeight");
+      const customSizeHint = document.querySelector("#customSizeHint");
       const qualitySeg = document.querySelector("#qualitySeg");
+      const outputFormatSeg = document.querySelector("#outputFormatSeg");
       const modal = document.querySelector("#modal");
       const modalImage = document.querySelector("#modalImage");
       const modalFailure = document.querySelector("#modalFailure");
@@ -1077,9 +1166,9 @@
       const modalClose = document.querySelector("#modalClose");
 
       const sizeRatioMap = {
-        "1024x1024": "1:1", "1536x2048": "3:4", "2048x1536": "4:3",
-        "3360x1440": "21:9", "1024x1536": "2:3", "1536x1024": "3:2",
-        "2160x3840": "9:16", "3840x2160": "16:9",
+        "1024x1024": "1:1", "768x1024": "3:4", "1024x768": "4:3",
+        "3840x1648": "21:9", "1024x1536": "2:3", "1536x1024": "3:2",
+        "1152x2048": "9:16", "2048x1152": "16:9",
       };
       let activeHistoryRecord = null;
       let selectingHistory = false;
@@ -1095,13 +1184,56 @@
 
       let selectedSize = "1024x1024";
       let selectedQuality = "auto";
+      let selectedOutputFormat = "png";
+      const maxImagePixels = 3840 * 2160;
 
       ratioGrid.addEventListener("click", (e) => {
         const btn = e.target.closest(".ratio-btn");
         if (!btn) return;
         ratioGrid.querySelectorAll(".ratio-btn").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
-        selectedSize = btn.dataset.value;
+        customSizeRow.hidden = btn.dataset.value !== "custom";
+        selectedSize = btn.dataset.value === "custom" ? `${customWidth.value}x${customHeight.value}` : btn.dataset.value;
+      });
+      function isCustomSizeSelected() {
+        return ratioGrid.querySelector(".ratio-btn.active")?.dataset.value === "custom";
+      }
+      function validateCustomSize(showHint = true) {
+        const width = Number(customWidth.value);
+        const height = Number(customHeight.value);
+        let message = "";
+        if (!Number.isInteger(width) || !Number.isInteger(height) || width < 16 || height < 16 || width > 4096 || height > 4096) {
+          message = "Custom width and height must be whole numbers from 16 to 4096.";
+        } else if (width % 16 !== 0 || height % 16 !== 0) {
+          message = "Custom width and height must both be divisible by 16.";
+        } else if (width * height > maxImagePixels) {
+          message = `Custom resolution must not exceed ${maxImagePixels.toLocaleString()} pixels. Try 3840x2160 or smaller.`;
+        }
+        customWidth.classList.toggle("invalid", Boolean(message) && (!Number.isInteger(width) || width < 16 || width > 4096 || width % 16 !== 0));
+        customHeight.classList.toggle("invalid", Boolean(message) && (!Number.isInteger(height) || height < 16 || height > 4096 || height % 16 !== 0));
+        if (width * height > maxImagePixels) {
+          customWidth.classList.add("invalid");
+          customHeight.classList.add("invalid");
+        }
+        customSizeHint.hidden = !message || !showHint;
+        customSizeHint.textContent = message;
+        return message ? "" : `${width}x${height}`;
+      }
+      function getCustomSize() {
+        const size = validateCustomSize(true);
+        if (!size) {
+          customWidth.reportValidity?.();
+          customHeight.reportValidity?.();
+        }
+        return size;
+      }
+      [customWidth, customHeight].forEach(input => {
+        input.addEventListener("input", () => {
+          if (!isCustomSizeSelected()) return;
+          const size = validateCustomSize(true);
+          selectedSize = size || `${customWidth.value}x${customHeight.value}`;
+        });
+        input.addEventListener("blur", () => { if (isCustomSizeSelected()) validateCustomSize(true); });
       });
       qualitySeg.addEventListener("click", (e) => {
         const btn = e.target.closest(".seg-btn");
@@ -1109,6 +1241,13 @@
         qualitySeg.querySelectorAll(".seg-btn").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
         selectedQuality = btn.dataset.value;
+      });
+      outputFormatSeg.addEventListener("click", (e) => {
+        const btn = e.target.closest(".seg-btn");
+        if (!btn) return;
+        outputFormatSeg.querySelectorAll(".seg-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        selectedOutputFormat = btn.dataset.value;
       });
 
       function setStatus(text, mode = "idle") {
@@ -1150,6 +1289,7 @@
         const a = m.actual_quality || m.quality || "";
         return (r || a) ? `q:${r || "-"}/${a || "-"}` : "";
       }
+      function formatOutputFormat(v) { return v ? `fmt:${v}` : ""; }
       function formatSize(v) { return v ? (sizeRatioMap[v] || v) : ""; }
       function formatStatus(v) { return v === "failed" ? "failed" : "success"; }
       function promptPreview(job) {
@@ -1201,7 +1341,7 @@
         footer.className = "result-card-footer";
         const metaEl = document.createElement("div");
         metaEl.className = "result-card-meta";
-        metaEl.textContent = [formatSize(meta.size), formatQuality(meta)].filter(Boolean).join(" \u00b7 ");
+        metaEl.textContent = [formatSize(meta.size), formatQuality(meta), formatOutputFormat(meta.output_format)].filter(Boolean).join(" \u00b7 ");
         const actions = document.createElement("div");
         actions.className = "result-card-actions";
         const openBtn = document.createElement("a");
@@ -1230,7 +1370,7 @@
         const prompt = document.createElement("div"); prompt.className = "history-prompt";
         prompt.textContent = record.prompt || "history image";
         const detail = document.createElement("div"); detail.className = "history-detail";
-        detail.textContent = [formatSize(record.size), formatQuality(record), formatDate(record.created_at), formatStatus(record.status)].filter(Boolean).join(" \u00b7 ");
+        detail.textContent = [formatSize(record.size), formatQuality(record), formatOutputFormat(record.output_format), formatDate(record.created_at), formatStatus(record.status)].filter(Boolean).join(" \u00b7 ");
         info.append(prompt, detail);
         const actions = document.createElement("div"); actions.className = "history-row-actions";
         const view = document.createElement("button"); view.className = "history-view"; view.type = "button"; view.textContent = "View";
@@ -1317,7 +1457,7 @@
 
       async function openModal(record) {
         modalPrompt.textContent = "Loading...";
-        modalMeta.textContent = [formatSize(record.size), formatQuality(record), formatDate(record.created_at), formatStatus(record.status)].filter(Boolean).join(" \u00b7 ");
+        modalMeta.textContent = [formatSize(record.size), formatQuality(record), formatOutputFormat(record.output_format), formatDate(record.created_at), formatStatus(record.status)].filter(Boolean).join(" \u00b7 ");
         modal.hidden = false;
         const res = await fetch(`/v1/history/${record.id}`);
         if (!res.ok) { modalPrompt.textContent = `Load failed: HTTP ${res.status}`; return; }
@@ -1330,7 +1470,7 @@
           modalImage.alt = "failed generation";
           modalFailure.hidden = false;
           modalFailure.textContent = `Generation failed${record.status_code ? ` (${record.status_code})` : ""}:\n${formatHistoryError(record)}`;
-          modalMeta.textContent = [formatSize(record.size), formatQuality(record), formatDate(record.created_at), formatStatus(record.status)].filter(Boolean).join(" \u00b7 ");
+          modalMeta.textContent = [formatSize(record.size), formatQuality(record), formatOutputFormat(record.output_format), formatDate(record.created_at), formatStatus(record.status)].filter(Boolean).join(" \u00b7 ");
           modalPrompt.textContent = record.prompt || "No prompt";
           modalOpen.removeAttribute("href");
           modalDownload.removeAttribute("href");
@@ -1340,7 +1480,7 @@
         modalFailure.hidden = true;
         modalFailure.textContent = "";
         modalImage.src = src; modalImage.alt = record.prompt || "history image";
-        modalMeta.textContent = [formatSize(record.size), formatQuality(record), formatDate(record.created_at), formatStatus(record.status)].filter(Boolean).join(" \u00b7 ");
+        modalMeta.textContent = [formatSize(record.size), formatQuality(record), formatOutputFormat(record.output_format), formatDate(record.created_at), formatStatus(record.status)].filter(Boolean).join(" \u00b7 ");
         modalPrompt.textContent = record.prompt || "No prompt";
         modalOpen.href = src; modalDownload.href = src; modalDownload.download = src.split("/").pop() || "image.png";
       }
@@ -1364,7 +1504,7 @@
       window.addEventListener("keydown", e => { if (e.key === "Escape" && !modal.hidden) closeModal(); });
 
       function isActiveJob(j) { return j?.status === "queued" || j?.status === "running"; }
-      function bodyFromJob(j) { const p = j.payload || {}; return { prompt: j.prompt || p.prompt || "", size: p.size || "", quality: p.quality || "auto", n: p.n || 1 }; }
+      function bodyFromJob(j) { const p = j.payload || {}; return { prompt: j.prompt || p.prompt || "", size: p.size || "", quality: p.quality || "auto", output_format: p.output_format || "png", n: p.n || 1 }; }
       function renderJobsPopover() {
         const jobs = [...backgroundJobs.values()].filter(isActiveJob);
         backgroundJobs.clear(); jobs.forEach(j => backgroundJobs.set(j.id, j));
@@ -1377,7 +1517,7 @@
           const meta = document.createElement("div"); meta.className = "job-meta";
           const prompt = document.createElement("div"); prompt.className = "job-prompt"; prompt.textContent = promptPreview(job);
           const detail = document.createElement("div"); detail.className = "job-detail";
-          detail.textContent = [formatSize(bodyFromJob(job).size), bodyFromJob(job).quality, job.id.slice(0, 8)].join(" \u00b7 ");
+          detail.textContent = [formatSize(bodyFromJob(job).size), bodyFromJob(job).quality, bodyFromJob(job).output_format, job.id.slice(0, 8)].join(" \u00b7 ");
           meta.append(prompt, detail);
           const side = document.createElement("div"); side.className = "job-side";
           const status = document.createElement("span"); status.className = `job-status ${job.status}`; status.textContent = job.status;
@@ -1437,7 +1577,7 @@
         if (cur?.dataset.backgroundJobId !== job.id) return false;
         if (job.status === "succeeded") {
           const body = bodyFromJob(job), data = job.result;
-          const meta = { prompt: body.prompt, size: body.size, quality: data?.provider_response?.quality || body.quality };
+          const meta = { prompt: body.prompt, size: body.size, quality: data?.provider_response?.quality || body.quality, output_format: data?.provider_response?.output_format || body.output_format };
           const imgs = (data?.images || []).filter(i => i.file || i.url).map(i => createImageCard(i, meta));
           stopBusy(`${imgs.length} image${imgs.length === 1 ? "" : "s"}`);
           result.replaceChildren(...imgs); clearPromptAfterSuccess(body.prompt); return true;
@@ -1531,7 +1671,7 @@
             return;
           }
           const data = job.result;
-          const meta = { prompt: body.prompt, size: body.size, quality: data?.provider_response?.quality || body.quality };
+          const meta = { prompt: body.prompt, size: body.size, quality: data?.provider_response?.quality || body.quality, output_format: data?.provider_response?.output_format || body.output_format };
           const imgs = (data?.images || []).filter(i => i.file || i.url).map(i => createImageCard(i, meta));
           stopBusy(`${imgs.length} image${imgs.length === 1 ? "" : "s"}`);
           result.replaceChildren(...imgs);
@@ -1542,6 +1682,8 @@
 
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
+        const size = isCustomSizeSelected() ? getCustomSize() : selectedSize;
+        if (!size) return;
         const token = ++activePollToken; watchedJobId = null;
         setBusy("Generating"); submit.disabled = true;
         result.replaceChildren(Object.assign(document.createElement("div"), {
@@ -1549,7 +1691,7 @@
           innerHTML: '<div class="spinner"></div><div class="loader-text">Generating...</div><div class="loader-sub">4K or complex prompts may take a few minutes</div>'
         }));
         const count = Math.min(10, Math.max(1, parseInt(form.querySelector('[name="n"]').value, 10) || 1));
-        const body = { prompt: promptInput.value, size: selectedSize, quality: selectedQuality, n: count };
+        const body = { prompt: promptInput.value, size, quality: selectedQuality, output_format: selectedOutputFormat, n: count };
         let res, data;
         try {
           res = await fetch("/v1/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -1576,7 +1718,7 @@
         if (!active) { renderJobsPopover(); return; }
         backgroundJobs.delete(active.id); renderJobsPopover();
         const p = active.payload || {};
-        const body = { prompt: active.prompt || p.prompt || "", size: p.size || "", quality: p.quality || "auto", n: p.n || 1 };
+        const body = { prompt: active.prompt || p.prompt || "", size: p.size || "", quality: p.quality || "auto", output_format: p.output_format || "png", n: p.n || 1 };
         const token = ++activePollToken; watchedJobId = active.id; setBusy("Generating"); submit.disabled = true;
         showJobState(active, body, token); await pollJob(active.id, body, token);
       }
