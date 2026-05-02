@@ -569,14 +569,17 @@
       .history-list {
         min-height: 0;
         overflow-y: auto;
+        overflow-x: hidden;
         padding: 0 24px 10px;
         display: flex;
         flex-direction: column;
         gap: 1px;
       }
       .history-row {
+        width: 100%;
+        min-width: 0;
         display: grid;
-        grid-template-columns: auto 1fr auto;
+        grid-template-columns: 16px minmax(0, 1fr) 88px;
         align-items: center;
         gap: 8px;
         padding: 7px 10px;
@@ -594,9 +597,9 @@
         width: 14px;
         height: 14px;
         accent-color: var(--accent);
-        display: none;
+        visibility: hidden;
       }
-      .selecting .history-check { display: block; }
+      .selecting .history-check { visibility: visible; }
       .history-info { min-width: 0; display: grid; gap: 1px; }
       .history-prompt {
         font-size: 12px;
@@ -612,6 +615,8 @@
         font-family: var(--font-mono);
       }
       .history-view {
+        width: 58px;
+        height: 24px;
         padding: 2px 7px;
         background: transparent;
         border: 1px solid var(--border);
@@ -622,6 +627,33 @@
         cursor: pointer;
         transition: all 0.12s;
         white-space: nowrap;
+      }
+      .history-delete {
+        width: 24px;
+        height: 24px;
+        display: grid;
+        place-items: center;
+        padding: 0;
+        background: transparent;
+        border: 1px solid var(--danger-border);
+        border-radius: 4px;
+        color: var(--danger);
+        font-size: 13px;
+        font-weight: 800;
+        cursor: pointer;
+        transition: all 0.12s;
+      }
+      .history-delete:hover {
+        background: var(--danger-bg);
+        border-color: var(--danger);
+      }
+      .history-row-actions {
+        width: 88px;
+        min-width: 88px;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 5px;
       }
       .history-row:hover .history-view {
         border-color: rgba(56, 140, 255, 0.3);
@@ -753,6 +785,21 @@
         display: block;
         border-radius: 6px;
       }
+      .modal-image-wrap img[hidden] { display: none; }
+      .modal-failure {
+        max-width: min(760px, 92%);
+        max-height: 88%;
+        overflow: auto;
+        padding: 16px;
+        background: var(--danger-bg);
+        border: 1px solid var(--danger-border);
+        border-radius: var(--radius);
+        color: var(--danger);
+        font: 12px/1.6 var(--font-mono);
+        white-space: pre-wrap;
+        word-break: break-word;
+      }
+      .modal-failure[hidden] { display: none; }
       .modal-info {
         min-height: 0;
         background: var(--bg-card);
@@ -978,6 +1025,7 @@
     <div class="modal-overlay" id="modal" hidden>
       <div class="modal-image-wrap">
         <img id="modalImage" alt="history image" />
+        <div class="modal-failure" id="modalFailure" hidden></div>
       </div>
       <div class="modal-info">
         <div class="modal-info-head">
@@ -1019,6 +1067,7 @@
       const qualitySeg = document.querySelector("#qualitySeg");
       const modal = document.querySelector("#modal");
       const modalImage = document.querySelector("#modalImage");
+      const modalFailure = document.querySelector("#modalFailure");
       const modalMeta = document.querySelector("#modalMeta");
       const modalPrompt = document.querySelector("#modalPrompt");
       const modalOpen = document.querySelector("#modalOpen");
@@ -1091,6 +1140,10 @@
         if (data?.detail) return JSON.stringify(data.detail, null, 2);
         return JSON.stringify(data || { error: "Failed" }, null, 2);
       }
+      function formatHistoryError(record) {
+        if (!record?.error) return "Generation failed, but no error detail was recorded.";
+        return typeof record.error === "string" ? record.error : JSON.stringify(record.error, null, 2);
+      }
       function formatDate(v) { return v ? new Date(v * 1000).toLocaleString() : ""; }
       function formatQuality(m = {}) {
         const r = m.requested_quality || m.quality || "";
@@ -1098,6 +1151,7 @@
         return (r || a) ? `q:${r || "-"}/${a || "-"}` : "";
       }
       function formatSize(v) { return v ? (sizeRatioMap[v] || v) : ""; }
+      function formatStatus(v) { return v === "failed" ? "failed" : "success"; }
       function promptPreview(job) {
         const t = (job.payload?.prompt || job.prompt || "no prompt");
         return t.length > 50 ? t.slice(0, 50) + "..." : t;
@@ -1176,10 +1230,22 @@
         const prompt = document.createElement("div"); prompt.className = "history-prompt";
         prompt.textContent = record.prompt || "history image";
         const detail = document.createElement("div"); detail.className = "history-detail";
-        detail.textContent = [formatSize(record.size), formatQuality(record), formatDate(record.created_at)].filter(Boolean).join(" \u00b7 ");
+        detail.textContent = [formatSize(record.size), formatQuality(record), formatDate(record.created_at), formatStatus(record.status)].filter(Boolean).join(" \u00b7 ");
         info.append(prompt, detail);
+        const actions = document.createElement("div"); actions.className = "history-row-actions";
         const view = document.createElement("button"); view.className = "history-view"; view.type = "button"; view.textContent = "View";
-        row.append(check, info, view);
+        const del = document.createElement("button"); del.className = "history-delete"; del.type = "button"; del.textContent = "\u00d7";
+        del.title = "Delete";
+        del.addEventListener("click", async e => {
+          e.stopPropagation();
+          if (!confirm("Delete this history item? Local image file will also be removed.")) return;
+          const res = await fetch(`/v1/history/${record.id}`, { method: "DELETE" });
+          if (!res.ok) { alert(`Delete failed: HTTP ${res.status}`); return; }
+          selectedHistoryIds.delete(record.id);
+          await loadHistory();
+        });
+        actions.append(view, del);
+        row.append(check, info, actions);
         row.addEventListener("click", () => {
           if (selectingHistory) { check.checked = !check.checked; check.checked ? selectedHistoryIds.add(record.id) : selectedHistoryIds.delete(record.id); updateSelectionUi(); return; }
           openModal(record);
@@ -1251,20 +1317,41 @@
 
       async function openModal(record) {
         modalPrompt.textContent = "Loading...";
-        modalMeta.textContent = [formatSize(record.size), formatQuality(record), formatDate(record.created_at)].filter(Boolean).join(" \u00b7 ");
+        modalMeta.textContent = [formatSize(record.size), formatQuality(record), formatDate(record.created_at), formatStatus(record.status)].filter(Boolean).join(" \u00b7 ");
         modal.hidden = false;
         const res = await fetch(`/v1/history/${record.id}`);
         if (!res.ok) { modalPrompt.textContent = `Load failed: HTTP ${res.status}`; return; }
         const detail = await res.json();
         const src = detail.file || detail.url;
-        if (!src) { modalPrompt.textContent = "No image URL"; return; }
         record = detail; activeHistoryRecord = record;
+        if (!src) {
+          modalImage.hidden = true;
+          modalImage.removeAttribute("src");
+          modalImage.alt = "failed generation";
+          modalFailure.hidden = false;
+          modalFailure.textContent = `Generation failed${record.status_code ? ` (${record.status_code})` : ""}:\n${formatHistoryError(record)}`;
+          modalMeta.textContent = [formatSize(record.size), formatQuality(record), formatDate(record.created_at), formatStatus(record.status)].filter(Boolean).join(" \u00b7 ");
+          modalPrompt.textContent = record.prompt || "No prompt";
+          modalOpen.removeAttribute("href");
+          modalDownload.removeAttribute("href");
+          return;
+        }
+        modalImage.hidden = false;
+        modalFailure.hidden = true;
+        modalFailure.textContent = "";
         modalImage.src = src; modalImage.alt = record.prompt || "history image";
-        modalMeta.textContent = [formatSize(record.size), formatQuality(record), formatDate(record.created_at)].filter(Boolean).join(" \u00b7 ");
+        modalMeta.textContent = [formatSize(record.size), formatQuality(record), formatDate(record.created_at), formatStatus(record.status)].filter(Boolean).join(" \u00b7 ");
         modalPrompt.textContent = record.prompt || "No prompt";
         modalOpen.href = src; modalDownload.href = src; modalDownload.download = src.split("/").pop() || "image.png";
       }
-      function closeModal() { modal.hidden = true; modalImage.removeAttribute("src"); activeHistoryRecord = null; }
+      function closeModal() {
+        modal.hidden = true;
+        modalImage.hidden = false;
+        modalImage.removeAttribute("src");
+        modalFailure.hidden = true;
+        modalFailure.textContent = "";
+        activeHistoryRecord = null;
+      }
       modalClose.addEventListener("click", closeModal);
       modal.addEventListener("click", e => { if (e.target === modal) closeModal(); });
       modalReuse.addEventListener("click", () => { if (!activeHistoryRecord) return; promptInput.value = activeHistoryRecord.prompt || ""; promptInput.focus(); closeModal(); });

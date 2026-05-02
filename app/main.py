@@ -488,6 +488,9 @@ def _normalize_history_record(record: dict[str, Any]) -> dict[str, Any]:
     normalized.setdefault("requested_quality", "")
     normalized.setdefault("actual_quality", "")
     normalized.setdefault("operation", "generate")
+    normalized.setdefault("status", "succeeded")
+    normalized.setdefault("error", None)
+    normalized.setdefault("status_code", None)
     normalized.setdefault("created_at", 0)
     return normalized
 
@@ -520,6 +523,9 @@ def _history_public(record: dict[str, Any]) -> dict[str, Any]:
         "actual_quality": actual_quality,
         "model": record.get("model", ""),
         "operation": record.get("operation", "generate"),
+        "status": record.get("status", "succeeded"),
+        "error": record.get("error"),
+        "status_code": record.get("status_code"),
         "created_at": record.get("created_at", 0),
     }
 
@@ -926,6 +932,34 @@ def _save_images_to_history(
     _append_history(history_records)
 
 
+def _save_failure_to_history(
+    job_id: str,
+    job: dict[str, Any],
+    error: Any,
+    status_code: int,
+) -> None:
+    payload = dict(job.get("payload") or {})
+    now = int(time.time())
+    _append_history(
+        [
+            {
+                "id": f"failed-{job_id}",
+                "prompt": job.get("prompt") or payload.get("prompt") or "",
+                "size": payload.get("size", ""),
+                "quality": payload.get("quality", ""),
+                "requested_quality": payload.get("quality", ""),
+                "actual_quality": "",
+                "model": payload.get("model", settings.model),
+                "operation": "generate",
+                "status": "failed",
+                "error": _redact_large_payloads(error),
+                "status_code": status_code,
+                "created_at": now,
+            }
+        ]
+    )
+
+
 def _append_images_with_stable_indexes(
     target: list[GeneratedImage], source: list[GeneratedImage]
 ) -> None:
@@ -1210,6 +1244,7 @@ async def _run_generation_job(job_id: str) -> None:
         _log_event("job_cancelled", job_id=job_id, request_id=job_id)
         raise
     except HTTPException as exc:
+        _save_failure_to_history(job_id, job, exc.detail, exc.status_code)
         _update_job(
             job_id,
             status="failed",
@@ -1227,6 +1262,7 @@ async def _run_generation_job(job_id: str) -> None:
         )
     except Exception as exc:
         detail = {"error": {"type": exc.__class__.__name__, "message": str(exc) or repr(exc)}}
+        _save_failure_to_history(job_id, job, detail, 500)
         _update_job(
             job_id,
             status="failed",
