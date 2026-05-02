@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Debug — Image CLI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <style>
+      @keyframes fadeInUp {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.4; }
+      }
+      :root {
+        --bg: #f5f6fa;
+        --bg-surface: #ffffff;
+        --bg-card: #ffffff;
+        --bg-terminal: #0f172a;
+        --border: #e2e4ea;
+        --border-subtle: #ecedf2;
+        --border-hover: #d0d2da;
+        --text: #1a1d2e;
+        --text-secondary: #5a6078;
+        --text-dim: #8a8ea4;
+        --text-muted: #b0b4c4;
+        --accent: #388cff;
+        --accent-subtle: rgba(56, 140, 255, 0.06);
+        --green: #30a46c;
+        --green-subtle: rgba(48, 164, 108, 0.08);
+        --red: #e5484d;
+        --red-subtle: rgba(229, 72, 77, 0.06);
+        --terminal-text: #7dd3fc;
+        --terminal-dim: #475569;
+        --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        height: 100vh;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font-body);
+      }
+
+      .shell {
+        height: 100vh;
+        display: grid;
+        grid-template-rows: auto 1fr;
+      }
+
+      header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 14px 24px;
+        border-bottom: 1px solid var(--border);
+        background: var(--bg-surface);
+        animation: fadeInUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+      .header-left { display: flex; align-items: center; gap: 12px; }
+      .logo {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        font-size: 15px;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+      }
+      .logo-icon {
+        width: 26px;
+        height: 26px;
+        display: grid;
+        place-items: center;
+        background: var(--accent-subtle);
+        border: 1px solid rgba(56, 140, 255, 0.12);
+        border-radius: 6px;
+      }
+      .logo-icon svg { width: 13px; height: 13px; color: var(--accent); }
+      .divider { width: 1px; height: 16px; background: var(--border); }
+      .page-title {
+        font-size: 12px;
+        color: var(--text-dim);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      .header-right { display: flex; align-items: center; gap: 8px; }
+      .hint { font-size: 11px; color: var(--text-muted); }
+      .back-link {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 5px 10px;
+        background: transparent;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        color: var(--text-dim);
+        text-decoration: none;
+        font-size: 12px;
+        font-weight: 500;
+        transition: all 0.15s;
+      }
+      .back-link:hover {
+        border-color: var(--border-hover);
+        color: var(--text-secondary);
+        background: var(--bg-card);
+        text-decoration: none;
+      }
+      .back-link svg { width: 12px; height: 12px; }
+
+      .panels {
+        min-height: 0;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        padding: 10px 24px 14px;
+        animation: fadeInUp 0.4s 0.06s cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+
+      .panel {
+        min-height: 0;
+        display: grid;
+        grid-template-rows: auto 1fr;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        overflow: hidden;
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--border-subtle);
+      }
+      .panel-head-left { display: flex; align-items: center; gap: 8px; }
+      .panel-icon {
+        width: 26px;
+        height: 26px;
+        display: grid;
+        place-items: center;
+        border-radius: 6px;
+      }
+      .panel-icon.journal {
+        background: var(--accent-subtle);
+        color: var(--accent);
+      }
+      .panel-icon.app {
+        background: var(--green-subtle);
+        color: var(--green);
+      }
+      .panel-icon svg { width: 13px; height: 13px; }
+      .panel-title { font-size: 13px; font-weight: 600; }
+      .panel-subtitle { font-size: 10px; color: var(--text-muted); margin-top: 1px; }
+
+      .status-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        transition: all 0.3s;
+      }
+      .status-pill.connecting { background: var(--accent-subtle); color: var(--accent); }
+      .status-pill.live { background: var(--green-subtle); color: var(--green); }
+      .status-pill.closed { background: var(--red-subtle); color: var(--red); }
+      .status-pill.reconnecting { background: var(--accent-subtle); color: var(--accent); }
+      .status-dot { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+      .status-pill.connecting .status-dot,
+      .status-pill.reconnecting .status-dot { animation: pulse 1.5s ease infinite; }
+
+      .log-view {
+        margin: 0;
+        min-height: 0;
+        overflow: auto;
+        padding: 10px 12px;
+        background: var(--bg-terminal);
+        font-family: var(--font-mono);
+        font-size: 11px;
+        line-height: 1.6;
+        color: var(--terminal-text);
+        white-space: pre;
+        scrollbar-width: thin;
+        scrollbar-color: rgba(255,255,255,0.1) transparent;
+      }
+      .log-view::-webkit-scrollbar { width: 5px; }
+      .log-view::-webkit-scrollbar-track { background: transparent; }
+      .log-view::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 99px; }
+      .log-view::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.2); }
+      .log-line {
+        min-height: 1.6em;
+        border-left: 2px solid transparent;
+        padding-left: 6px;
+        margin-left: -6px;
+        transition: border-color 0.12s;
+      }
+      .log-line:hover {
+        border-left-color: rgba(56, 140, 255, 0.5);
+        background: rgba(56, 140, 255, 0.05);
+      }
+      .log-line:empty::after { content: ' '; }
+
+      @media (max-width: 900px) {
+        body { height: 100dvh; }
+        .shell { height: 100dvh; }
+        .panels { grid-template-columns: 1fr; padding: 8px 14px 10px; }
+        header { padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
+        .hint { display: none; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div class="header-left">
+          <div class="logo">
+            <div class="logo-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>
+              </svg>
+            </div>
+            Image CLI
+          </div>
+          <div class="divider"></div>
+          <div class="page-title">Debug Logs</div>
+        </div>
+        <div class="header-right">
+          <span class="hint">打开本页后才会开始读取日志；默认加载历史 200 行</span>
+          <a class="back-link" href="/">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+            Back
+          </a>
+        </div>
+      </header>
+      <div class="panels">
+        <section class="panel">
+          <div class="panel-head">
+            <div class="panel-head-left">
+              <div class="panel-icon journal">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
+              </div>
+              <div>
+                <div class="panel-title">systemd / journalctl</div>
+                <div class="panel-subtitle">系统服务日志流</div>
+              </div>
+            </div>
+            <span class="status-pill connecting" id="journalState">
+              <span class="status-dot"></span>
+              connecting
+            </span>
+          </div>
+          <div class="log-view" id="journalLog"></div>
+        </section>
+        <section class="panel">
+          <div class="panel-head">
+            <div class="panel-head-left">
+              <div class="panel-icon app">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
+              </div>
+              <div>
+                <div class="panel-title">app.log</div>
+                <div class="panel-subtitle">应用运行日志</div>
+              </div>
+            </div>
+            <span class="status-pill connecting" id="appState">
+              <span class="status-dot"></span>
+              connecting
+            </span>
+          </div>
+          <div class="log-view" id="appLog"></div>
+        </section>
+      </div>
+    </div>
+    <script>
+      function attachLog(source, logId, stateId) {
+        const log = document.querySelector(`#${logId}`);
+        const state = document.querySelector(`#${stateId}`);
+        const events = new EventSource(`/v1/debug/logs/${source}`);
+        const maxLines = 200;
+        const pending = [];
+        let scheduled = false;
+
+        function flush() {
+          scheduled = false;
+          const shouldStick = log.scrollTop + log.clientHeight >= log.scrollHeight - 24;
+          const fragment = document.createDocumentFragment();
+          for (const line of pending.splice(0)) {
+            const node = document.createElement('div');
+            node.className = 'log-line';
+            node.textContent = line || '';
+            fragment.append(node);
+          }
+          log.append(fragment);
+          while (log.childElementCount > maxLines) {
+            log.firstElementChild.remove();
+          }
+          if (shouldStick) log.scrollTop = log.scrollHeight;
+        }
+
+        function enqueue(line) {
+          pending.push(line);
+          if (!scheduled) {
+            scheduled = true;
+            requestAnimationFrame(flush);
+          }
+        }
+
+        function setStatus(text, cls) {
+          state.className = 'status-pill ' + cls;
+          state.innerHTML = '<span class="status-dot"></span>' + text;
+        }
+
+        events.onopen = () => setStatus('live', 'live');
+        events.onmessage = (event) => {
+          enqueue(JSON.parse(event.data));
+        };
+        events.addEventListener('close', () => {
+          setStatus('closed', 'closed');
+          events.close();
+        });
+        events.onerror = () => {
+          setStatus('reconnecting', 'reconnecting');
+        };
+        window.addEventListener('beforeunload', () => events.close());
+      }
+
+      attachLog('journal', 'journalLog', 'journalState');
+      attachLog('app', 'appLog', 'appState');
+    </script>
+  </body>
+</html>

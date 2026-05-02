@@ -3,61 +3,213 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Login</title>
+    <title>Login — Image CLI</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
     <style>
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px) scale(0.98); }
+        to { opacity: 1; transform: translateY(0) scale(1); }
+      }
+      @keyframes float {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-4px); }
+      }
       :root {
-        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        color: #172033;
-        background: #f2f4f7;
+        --bg: #f5f6fa;
+        --bg-card: #ffffff;
+        --bg-input: #f0f1f5;
+        --border: #e2e4ea;
+        --border-hover: #d0d2da;
+        --border-focus: rgba(56, 140, 255, 0.5);
+        --text: #1a1d2e;
+        --text-secondary: #5a6078;
+        --text-muted: #9498aa;
+        --accent: #388cff;
+        --accent-light: #5ba0ff;
+        --accent-glow: rgba(56, 140, 255, 0.1);
+        --accent-subtle: rgba(56, 140, 255, 0.06);
+        --danger: #e5484d;
+        --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
       }
-      * { box-sizing: border-box; }
-      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f2f4f7; }
-      form {
-        width: min(390px, calc(100vw - 32px));
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body {
+        min-height: 100vh;
         display: grid;
-        gap: 18px;
-        border: 1px solid #d8dee9;
-        border-radius: 10px;
-        background: #ffffff;
-        padding: 24px;
+        place-items: center;
+        background: var(--bg);
+        color: var(--text);
+        font-family: var(--font-body);
+        overflow: hidden;
+        position: relative;
       }
-      h1 { margin: 0; font-size: 26px; letter-spacing: 0; }
-      p { margin: 0; color: #566176; font-size: 14px; }
-      label { display: grid; gap: 8px; color: #344054; font-size: 13px; font-weight: 800; }
+      body::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        background-image: radial-gradient(rgba(0,0,0,0.03) 1px, transparent 1px);
+        background-size: 20px 20px;
+        pointer-events: none;
+      }
+      .orb {
+        position: fixed;
+        border-radius: 50%;
+        filter: blur(80px);
+        pointer-events: none;
+      }
+      .orb-1 {
+        top: -10%;
+        right: -5%;
+        width: 400px;
+        height: 400px;
+        background: radial-gradient(circle, rgba(56, 140, 255, 0.08) 0%, transparent 70%);
+      }
+      .orb-2 {
+        bottom: -15%;
+        left: -8%;
+        width: 350px;
+        height: 350px;
+        background: radial-gradient(circle, rgba(139, 92, 246, 0.05) 0%, transparent 70%);
+      }
+
+      .card {
+        position: relative;
+        z-index: 1;
+        width: min(380px, calc(100vw - 40px));
+        display: grid;
+        gap: 28px;
+        padding: 40px 36px;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 6px 24px rgba(0,0,0,0.06);
+        animation: fadeIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+      .brand {
+        display: grid;
+        gap: 10px;
+        text-align: center;
+      }
+      .brand-icon {
+        width: 44px;
+        height: 44px;
+        margin: 0 auto;
+        display: grid;
+        place-items: center;
+        background: var(--accent-subtle);
+        border: 1px solid rgba(56, 140, 255, 0.12);
+        border-radius: 11px;
+        animation: float 4s ease-in-out infinite;
+      }
+      .brand-icon svg {
+        width: 22px;
+        height: 22px;
+        color: var(--accent);
+      }
+      h1 {
+        font-size: 20px;
+        font-weight: 700;
+        letter-spacing: -0.03em;
+        color: var(--text);
+      }
+      .brand p {
+        color: var(--text-secondary);
+        font-size: 13px;
+        font-weight: 400;
+      }
+      .field {
+        display: grid;
+        gap: 6px;
+      }
+      .field label {
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--text-secondary);
+      }
       input {
         width: 100%;
-        border: 1px solid #c9d2df;
-        border-radius: 8px;
-        padding: 12px;
-        font: inherit;
+        padding: 10px 12px;
+        background: var(--bg-input);
+        border: 1px solid var(--border);
+        border-radius: 9px;
+        color: var(--text);
+        font-family: var(--font-body);
+        font-size: 14px;
+        font-weight: 400;
         outline: none;
+        transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
       }
-      input:focus { border-color: #165dcc; box-shadow: 0 0 0 3px rgba(22, 93, 204, 0.12); }
+      input::placeholder { color: var(--text-muted); }
+      input:hover {
+        border-color: var(--border-hover);
+        background: #fff;
+      }
+      input:focus {
+        border-color: var(--border-focus);
+        box-shadow: 0 0 0 3px var(--accent-glow);
+        background: #fff;
+      }
       button {
-        min-height: 46px;
+        padding: 10px 18px;
+        background: var(--accent);
+        color: #fff;
         border: 0;
-        border-radius: 8px;
-        background: #165dcc;
-        color: #ffffff;
+        border-radius: 9px;
+        font-family: var(--font-body);
+        font-size: 14px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
         cursor: pointer;
-        font: inherit;
-        font-weight: 800;
+        transition: all 0.2s;
       }
-      #error { min-height: 20px; color: #9f1239; font-size: 13px; white-space: pre-wrap; }
+      button:hover {
+        background: var(--accent-light);
+        box-shadow: 0 2px 12px rgba(56, 140, 255, 0.25);
+        transform: translateY(-1px);
+      }
+      button:active { transform: translateY(0); }
+      #error {
+        min-height: 16px;
+        color: var(--danger);
+        font-size: 13px;
+        font-weight: 500;
+        white-space: pre-wrap;
+        text-align: center;
+      }
+      .footer {
+        text-align: center;
+        color: var(--text-muted);
+        font-size: 11px;
+        font-family: var(--font-mono);
+        letter-spacing: 0.02em;
+      }
+      @media (max-width: 480px) {
+        .card { padding: 28px 22px; gap: 22px; }
+      }
     </style>
   </head>
   <body>
-    <form id="form">
-      <div>
-        <h1>gpt-image-2</h1>
-        <p>输入密码继续使用图片生成服务</p>
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+    <form class="card" id="form">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>
+          </svg>
+        </div>
+        <h1>Image CLI</h1>
+        <p>AI Image Generation Studio</p>
       </div>
-      <label>
-        Password
-        <input name="password" type="password" autocomplete="current-password" autofocus required />
-      </label>
-      <button type="submit">登录</button>
+      <div class="field">
+        <label for="password">Password</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" autofocus required placeholder="Enter access password" />
+      </div>
+      <button type="submit">Sign in</button>
       <div id="error"></div>
+      <div class="footer">gpt-image-2 powered</div>
     </form>
     <script>
       const form = document.querySelector("#form");
@@ -76,7 +228,7 @@
           return;
         }
         const data = await response.json().catch(() => ({}));
-        error.textContent = data.detail || "登录失败";
+        error.textContent = data.detail || "Authentication failed";
       });
     </script>
   </body>

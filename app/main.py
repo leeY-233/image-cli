@@ -7,6 +7,7 @@ import hmac
 import json
 import logging
 import os
+import shutil
 import tempfile
 import time
 import uuid
@@ -20,7 +21,13 @@ import httpx
 from dotenv import load_dotenv
 from starlette.background import BackgroundTask
 from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+    StreamingResponse,
+)
 from pydantic import BaseModel, Field
 
 
@@ -52,6 +59,7 @@ class Settings(BaseModel):
     session_secret: str = Field(
         default_factory=lambda: os.getenv("APP_SESSION_SECRET", "")
     )
+    systemd_unit: str = Field(default_factory=lambda: os.getenv("SYSTEMD_UNIT", "image-cli"))
     session_max_age_seconds: int = 60 * 60 * 24 * 7
 
     @property
@@ -239,6 +247,121 @@ def _read_template(name: str) -> str:
     return _template_path(name).read_text(encoding="utf-8")
 
 
+def _sse_payload(line: str) -> str:
+    return f"data: {json.dumps(line, ensure_ascii=False)}\n\n"
+
+
+def _sse_event(event: str, data: Any) -> str:
+    return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
+
+
+def _debug_timestamp(ts: int | float | None = None) -> str:
+    timestamp = time.localtime(ts if ts is not None else time.time())
+    return time.strftime("%Y-%m-%d %H:%M:%S", timestamp)
+
+
+def _starts_with_timestamp(line: str) -> bool:
+    if len(line) >= 19 and line[4:5] == "-" and line[7:8] == "-" and line[10:11] in {" ", "T"}:
+        return True
+    return False
+
+
+def _format_debug_line(line: str, source: str) -> str:
+    if _starts_with_timestamp(line):
+        return line
+
+    if source == "app":
+        try:
+            payload = json.loads(line)
+        except json.JSONDecodeError:
+            payload = None
+        if isinstance(payload, dict):
+            raw_ts = payload.get("ts")
+            if isinstance(raw_ts, (int, float)):
+                return f"{_debug_timestamp(raw_ts)} {line}"
+
+    return f"{_debug_timestamp()} {line}"
+
+
+async def _stream_command_lines(
+    command: list[str], unavailable_message: str, source: str
+):
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+    except FileNotFoundError:
+        yield _sse_payload(_format_debug_line(unavailable_message, source))
+        yield _sse_event("close", {"reason": "command_not_found"})
+        return
+    except Exception as exc:
+        yield _sse_payload(
+            _format_debug_line(f"日志进程启动失败：{exc.__class__.__name__}: {exc}", source)
+        )
+        return
+
+    try:
+        if process.stdout is None:
+            yield _sse_payload(_format_debug_line("日志进程没有可读取的输出", source))
+            return
+        while True:
+            line = await process.stdout.readline()
+            if not line:
+                return_code = await process.wait()
+                if return_code:
+                    yield _sse_payload(
+                        _format_debug_line(f"日志进程已退出，exit={return_code}", source)
+                    )
+                return
+            text = line.decode("utf-8", errors="replace").rstrip("\n")
+            yield _sse_payload(_format_debug_line(text, source))
+    finally:
+        if process.returncode is None:
+            process.terminate()
+            try:
+                await asyncio.wait_for(process.wait(), timeout=3)
+            except asyncio.TimeoutError:
+                process.kill()
+                await process.wait()
+
+
+def _debug_log_command(source: str) -> tuple[list[str], str]:
+    if source == "journal":
+        journalctl = shutil.which("journalctl")
+        if not journalctl:
+            return (
+                ["journalctl"],
+                "当前系统没有 journalctl，systemd 日志只能在 Linux systemd 服务器上查看。",
+            )
+        return (
+            [
+                journalctl,
+                "-u",
+                settings.systemd_unit,
+                "-n",
+                "200",
+                "-f",
+                "--no-pager",
+                "-o",
+                "short-iso",
+            ],
+            "",
+        )
+
+    if source == "app":
+        tail = shutil.which("tail")
+        if not tail:
+            return (["tail"], "当前系统没有 tail 命令，无法持续读取 app.log。")
+        return (
+            [tail, "-n", "200", "-F", str(settings.log_dir / "app.log")],
+            "",
+        )
+
+    raise HTTPException(status_code=404, detail="Unknown debug log source")
+
+
 def _history_path() -> Path:
     return settings.output_dir / "history.json"
 
@@ -258,6 +381,33 @@ def _save_jobs(jobs: list[dict[str, Any]]) -> None:
     path = _jobs_path()
     with _json_file_lock(path, exclusive=True):
         _write_json_list_unlocked(path, jobs[:JOB_LIMIT])
+
+
+def _mark_interrupted_jobs_on_startup() -> None:
+    now = int(time.time())
+    path = _jobs_path()
+    interrupted: list[str] = []
+    with _json_file_lock(path, exclusive=True):
+        jobs = _read_json_list_unlocked(path)
+        for job in jobs:
+            if job.get("status") not in ACTIVE_JOB_STATUSES:
+                continue
+            job["status"] = "failed"
+            job["status_code"] = 500
+            job["finished_at"] = now
+            job["updated_at"] = now
+            job["error"] = {
+                "error": {
+                    "type": "JobInterrupted",
+                    "message": "服务重启后该 Job 的本地执行任务已丢失，请重新提交生成。",
+                }
+            }
+            interrupted.append(str(job.get("id") or ""))
+        if interrupted:
+            jobs.sort(key=lambda item: _safe_int(item.get("created_at")), reverse=True)
+            _write_json_list_unlocked(path, jobs[:JOB_LIMIT])
+    if interrupted:
+        _log_event("jobs_marked_interrupted_on_startup", job_ids=interrupted)
 
 
 def _get_job(job_id: str) -> dict[str, Any] | None:
@@ -402,8 +552,13 @@ def _append_history(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         deduped = _sort_history_records(deduped)
         kept = deduped[:HISTORY_LIMIT]
         overflow = deduped[HISTORY_LIMIT:]
+        job_file_references = _job_file_references() if overflow else set()
         for record in overflow:
-            _delete_history_file(record, preserve_job_references=True)
+            _delete_history_file(
+                record,
+                preserve_job_references=True,
+                job_file_references=job_file_references,
+            )
         _write_json_list_unlocked(path, kept)
         new_ids = {record["id"] for record in new_records}
         return [record for record in kept if record.get("id") in new_ids]
@@ -423,10 +578,16 @@ def _job_file_references() -> set[str]:
     return set().union(*(_collect_file_urls(job.get("result")) for job in _load_jobs()))
 
 
-def _delete_history_file(record: dict[str, Any], preserve_job_references: bool = False) -> None:
+def _delete_history_file(
+    record: dict[str, Any],
+    preserve_job_references: bool = False,
+    job_file_references: set[str] | None = None,
+) -> None:
     file_url = str(record.get("file") or "")
     if file_url.startswith("/files/"):
-        if preserve_job_references and file_url in _job_file_references():
+        if preserve_job_references and file_url in (
+            job_file_references if job_file_references is not None else _job_file_references()
+        ):
             _log_event(
                 "history_overflow_file_preserved",
                 history_id=record.get("id"),
@@ -563,6 +724,32 @@ def index(request: Request):
     if not _is_authenticated(request):
         return RedirectResponse("/login", status_code=303)
     return HTMLResponse(_read_template("index.html"))
+
+
+@app.on_event("startup")
+def mark_interrupted_jobs() -> None:
+    _mark_interrupted_jobs_on_startup()
+
+
+@app.get("/debug", response_class=HTMLResponse)
+def debug_page(request: Request):
+    if not _is_authenticated(request):
+        return RedirectResponse("/login", status_code=303)
+    return HTMLResponse(_read_template("debug.html"))
+
+
+@app.get("/v1/debug/logs/{source}")
+async def debug_logs(source: str, request: Request) -> StreamingResponse:
+    _require_auth(request)
+    command, unavailable_message = _debug_log_command(source)
+    return StreamingResponse(
+        _stream_command_lines(command, unavailable_message, source),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/files/{filename}")
