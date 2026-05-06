@@ -20,7 +20,7 @@ from typing import Any, Literal
 import httpx
 from dotenv import load_dotenv
 from starlette.background import BackgroundTask
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import (
     FileResponse,
     HTMLResponse,
@@ -48,6 +48,9 @@ class Settings(BaseModel):
     response_format: str = Field(
         default_factory=lambda: os.getenv("IMAGE_RESPONSE_FORMAT", "b64_json")
     )
+    edit_image_field: str = Field(
+        default_factory=lambda: os.getenv("IMAGE_EDIT_IMAGE_FIELD", "image[]")
+    )
     output_dir: Path = Field(
         default_factory=lambda: Path(os.getenv("OUTPUT_DIR", "outputs"))
     )
@@ -69,6 +72,10 @@ class Settings(BaseModel):
     def images_url(self) -> str:
         return f"{self.base_url.rstrip('/')}/images/generations"
 
+    @property
+    def image_edits_url(self) -> str:
+        return f"{self.base_url.rstrip('/')}/images/edits"
+
 
 settings = Settings()
 settings.output_dir.mkdir(parents=True, exist_ok=True)
@@ -83,6 +90,9 @@ JOB_TASKS: dict[str, asyncio.Task] = {}
 MIN_IMAGE_DIMENSION = 16
 MAX_IMAGE_DIMENSION = 4096
 MAX_IMAGE_PIXELS = 3840 * 2160
+MAX_EDIT_UPLOAD_BYTES = 50 * 1024 * 1024
+MAX_EDIT_SOURCE_IMAGES = 16
+SUPPORTED_EDIT_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp"}
 
 logger = logging.getLogger("image_cli")
 logger.setLevel(logging.INFO)
@@ -129,6 +139,10 @@ class GeneratedImage(BaseModel):
     url: str | None = None
     file: str | None = None
     revised_prompt: str | None = None
+    file_size_bytes: int | None = None
+    image_width: int | None = None
+    image_height: int | None = None
+    image_dimensions: str = ""
 
 
 class GenerateImageResponse(BaseModel):
@@ -532,6 +546,101 @@ def _legacy_history_id(record: dict[str, Any]) -> str:
     return uuid.uuid5(uuid.NAMESPACE_URL, seed).hex
 
 
+def _file_path_from_url(file_url: str) -> Path | None:
+    if not file_url.startswith("/files/"):
+        return None
+    return settings.output_dir / Path(file_url.removeprefix("/files/")).name
+
+
+def _png_dimensions(data: bytes) -> tuple[int, int] | None:
+    if len(data) < 24 or not data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return None
+    if data[12:16] != b"IHDR":
+        return None
+    return int.from_bytes(data[16:20], "big"), int.from_bytes(data[20:24], "big")
+
+
+def _jpeg_dimensions(data: bytes) -> tuple[int, int] | None:
+    if len(data) < 4 or not data.startswith(b"\xff\xd8"):
+        return None
+    index = 2
+    while index + 9 < len(data):
+        if data[index] != 0xFF:
+            index += 1
+            continue
+        marker = data[index + 1]
+        index += 2
+        if marker in {0xD8, 0xD9}:
+            continue
+        if index + 2 > len(data):
+            return None
+        segment_length = int.from_bytes(data[index:index + 2], "big")
+        if segment_length < 2 or index + segment_length > len(data):
+            return None
+        if marker in {
+            0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7,
+            0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF,
+        }:
+            height = int.from_bytes(data[index + 3:index + 5], "big")
+            width = int.from_bytes(data[index + 5:index + 7], "big")
+            return width, height
+        index += segment_length
+    return None
+
+
+def _webp_dimensions(data: bytes) -> tuple[int, int] | None:
+    if len(data) < 30 or data[:4] != b"RIFF" or data[8:12] != b"WEBP":
+        return None
+    chunk_type = data[12:16]
+    if chunk_type == b"VP8X" and len(data) >= 30:
+        width = 1 + int.from_bytes(data[24:27], "little")
+        height = 1 + int.from_bytes(data[27:30], "little")
+        return width, height
+    if chunk_type == b"VP8 " and len(data) >= 30:
+        if data[23:26] != b"\x9d\x01\x2a":
+            return None
+        width = int.from_bytes(data[26:28], "little") & 0x3FFF
+        height = int.from_bytes(data[28:30], "little") & 0x3FFF
+        return width, height
+    if chunk_type == b"VP8L" and len(data) >= 25:
+        bits = int.from_bytes(data[21:25], "little")
+        width = (bits & 0x3FFF) + 1
+        height = ((bits >> 14) & 0x3FFF) + 1
+        return width, height
+    return None
+
+
+def _image_dimensions(path: Path) -> tuple[int, int] | None:
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return None
+    return _png_dimensions(data) or _jpeg_dimensions(data) or _webp_dimensions(data)
+
+
+def _history_file_metadata(file_url: str) -> dict[str, int | str | None]:
+    file_path = _file_path_from_url(file_url)
+    if file_path is None or not file_path.is_file():
+        return {
+            "file_size_bytes": None,
+            "image_width": None,
+            "image_height": None,
+            "image_dimensions": "",
+        }
+    try:
+        file_size = file_path.stat().st_size
+    except OSError:
+        file_size = None
+    dimensions = _image_dimensions(file_path)
+    width, height = dimensions if dimensions else (None, None)
+    return {
+        "file_size_bytes": file_size,
+        "image_width": width,
+        "image_height": height,
+        "image_dimensions": f"{width}x{height}" if width and height else "",
+    }
+
+
 def _normalize_history_record(record: dict[str, Any]) -> dict[str, Any]:
     normalized = record.copy()
     if not normalized.get("id"):
@@ -547,6 +656,21 @@ def _normalize_history_record(record: dict[str, Any]) -> dict[str, Any]:
     normalized.setdefault("error", None)
     normalized.setdefault("status_code", None)
     normalized.setdefault("created_at", 0)
+    metadata = _history_file_metadata(str(normalized.get("file") or ""))
+    if normalized.get("file_size_bytes") is None:
+        normalized["file_size_bytes"] = metadata["file_size_bytes"]
+    if normalized.get("image_width") is None:
+        normalized["image_width"] = metadata["image_width"]
+    if normalized.get("image_height") is None:
+        normalized["image_height"] = metadata["image_height"]
+    normalized.setdefault(
+        "image_dimensions",
+        metadata["image_dimensions"] or (
+            f"{normalized.get('image_width')}x{normalized.get('image_height')}"
+            if normalized.get("image_width") and normalized.get("image_height")
+            else ""
+        ),
+    )
     return normalized
 
 
@@ -582,6 +706,10 @@ def _history_public(record: dict[str, Any]) -> dict[str, Any]:
         "status": record.get("status", "succeeded"),
         "error": record.get("error"),
         "status_code": record.get("status_code"),
+        "file_size_bytes": record.get("file_size_bytes"),
+        "image_width": record.get("image_width"),
+        "image_height": record.get("image_height"),
+        "image_dimensions": record.get("image_dimensions", ""),
         "created_at": record.get("created_at", 0),
     }
 
@@ -615,11 +743,13 @@ def _append_history(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         kept = deduped[:HISTORY_LIMIT]
         overflow = deduped[HISTORY_LIMIT:]
         job_file_references = _job_file_references() if overflow else set()
+        history_file_references = _history_file_references(kept) if overflow else set()
         for record in overflow:
             _delete_history_file(
                 record,
                 preserve_job_references=True,
                 job_file_references=job_file_references,
+                history_file_references=history_file_references,
             )
         _write_json_list_unlocked(path, kept)
         new_ids = {record["id"] for record in new_records}
@@ -640,13 +770,38 @@ def _job_file_references() -> set[str]:
     return set().union(*(_collect_file_urls(job.get("result")) for job in _load_jobs()))
 
 
+def _record_file_urls(record: dict[str, Any]) -> set[str]:
+    return {
+        str(record.get(key) or "")
+        for key in ("file", "source_file")
+        if str(record.get(key) or "").startswith("/files/")
+    }
+
+
+def _history_file_references(records: list[dict[str, Any]]) -> set[str]:
+    return set().union(*(_record_file_urls(record) for record in records))
+
+
 def _delete_history_file(
     record: dict[str, Any],
     preserve_job_references: bool = False,
     job_file_references: set[str] | None = None,
+    history_file_references: set[str] | None = None,
 ) -> None:
-    file_url = str(record.get("file") or "")
-    if file_url.startswith("/files/"):
+    seen: set[str] = set()
+    for key in ("file", "source_file"):
+        file_url = str(record.get(key) or "")
+        if not file_url.startswith("/files/") or file_url in seen:
+            continue
+        seen.add(file_url)
+        if history_file_references is not None and file_url in history_file_references:
+            _log_event(
+                "history_file_preserved",
+                history_id=record.get("id"),
+                file=file_url,
+                reason="referenced_by_another_history_record",
+            )
+            continue
         if preserve_job_references and file_url in (
             job_file_references if job_file_references is not None else _job_file_references()
         ):
@@ -656,7 +811,7 @@ def _delete_history_file(
                 file=file_url,
                 reason="referenced_by_job_result",
             )
-            return
+            continue
         file_path = settings.output_dir / Path(file_url.removeprefix("/files/")).name
         try:
             file_path.unlink(missing_ok=True)
@@ -671,7 +826,10 @@ def _delete_history_item(history_id: str) -> None:
         for index, record in enumerate(records):
             if str(record.get("id")) == history_id:
                 removed = records.pop(index)
-                _delete_history_file(removed)
+                _delete_history_file(
+                    removed,
+                    history_file_references=_history_file_references(records),
+                )
                 _write_json_list_unlocked(path, records)
                 return
     raise HTTPException(status_code=404, detail="History item not found")
@@ -692,8 +850,12 @@ def _delete_history_items(history_ids: list[str]) -> int:
                 removed.append(record)
             else:
                 kept.append(record)
+        history_file_references = _history_file_references(kept)
         for record in removed:
-            _delete_history_file(record)
+            _delete_history_file(
+                record,
+                history_file_references=history_file_references,
+            )
         _write_json_list_unlocked(path, kept)
         return len(removed)
 
@@ -891,6 +1053,196 @@ def _payload_from_request(request: GenerateImageRequest) -> dict[str, Any]:
     return payload
 
 
+def _parse_extra_json(extra: str | None) -> dict[str, Any]:
+    if not extra:
+        return {}
+    try:
+        data = json.loads(extra)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=400, detail="extra must be valid JSON") from exc
+    if not isinstance(data, dict):
+        raise HTTPException(status_code=400, detail="extra must be a JSON object")
+    return data
+
+
+def _payload_from_edit_form(
+    prompt: str,
+    model: str | None,
+    size: str | None,
+    quality: str | None,
+    output_format: str | None,
+    n: int,
+    response_format: str | None,
+    extra: str | None,
+) -> dict[str, Any]:
+    if not prompt.strip():
+        raise HTTPException(status_code=400, detail="prompt is required")
+    if len(prompt) > 8000:
+        raise HTTPException(status_code=400, detail="prompt must be 8000 characters or fewer")
+    if output_format and output_format not in {"png", "jpeg", "webp"}:
+        raise HTTPException(status_code=400, detail="output_format must be png, jpeg, or webp")
+    if response_format and response_format not in {"b64_json", "url"}:
+        raise HTTPException(status_code=400, detail="response_format must be b64_json or url")
+
+    image_size = size or settings.image_size
+    _validate_size_budget(image_size)
+    payload: dict[str, Any] = {
+        "model": model or settings.model,
+        "prompt": prompt,
+        "size": image_size,
+        "quality": quality or settings.image_quality,
+        "output_format": output_format or settings.image_output_format,
+        "n": min(10, max(1, n)),
+        "response_format": response_format or settings.response_format,
+    }
+    payload.update(_parse_extra_json(extra))
+    return payload
+
+
+def _upload_suffix(filename: str | None, content_type: str | None) -> str:
+    if content_type == "image/jpeg":
+        return ".jpg"
+    if content_type == "image/webp":
+        return ".webp"
+    if content_type == "image/png":
+        return ".png"
+    suffix = Path(filename or "").suffix.lower()
+    if suffix in {".png", ".jpg", ".jpeg", ".webp"}:
+        return ".jpg" if suffix == ".jpeg" else suffix
+    return ".png"
+
+
+async def _read_edit_upload(
+    upload: UploadFile, field_name: str
+) -> dict[str, str | bytes]:
+    filename = Path(upload.filename or f"{field_name}.png").name
+    content_type = upload.content_type or "application/octet-stream"
+    if content_type not in SUPPORTED_EDIT_IMAGE_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"{field_name} '{filename}' must be a png, jpeg, or webp image "
+                f"(received {content_type})."
+            ),
+        )
+
+    content = await upload.read()
+    if not content:
+        raise HTTPException(status_code=400, detail=f"{field_name} '{filename}' is empty")
+    if len(content) > MAX_EDIT_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=(
+                f"{field_name} '{filename}' is too large. "
+                f"Maximum size is {MAX_EDIT_UPLOAD_BYTES // (1024 * 1024)}MB."
+            ),
+        )
+
+    return {
+        "filename": filename,
+        "content_type": content_type,
+        "content": content,
+    }
+
+
+async def _read_edit_uploads(
+    image: list[UploadFile], mask: UploadFile | None
+) -> tuple[list[dict[str, str | bytes]], dict[str, str | bytes] | None]:
+    if not image:
+        raise HTTPException(status_code=400, detail="At least one source image is required")
+    if len(image) > MAX_EDIT_SOURCE_IMAGES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"At most {MAX_EDIT_SOURCE_IMAGES} source images are supported",
+        )
+    source_images = [
+        await _read_edit_upload(upload, f"image[{index}]")
+        for index, upload in enumerate(image, start=1)
+    ]
+    mask_image = await _read_edit_upload(mask, "mask") if mask is not None else None
+    return source_images, mask_image
+
+
+def _save_uploaded_source_copy(source_image: dict[str, str | bytes]) -> str:
+    suffix = _upload_suffix(
+        str(source_image.get("filename") or ""),
+        str(source_image.get("content_type") or ""),
+    )
+    filename = f"{uuid.uuid4().hex}-source{suffix}"
+    output_path = settings.output_dir / filename
+    content = source_image.get("content")
+    if not isinstance(content, bytes):
+        return ""
+    output_path.write_bytes(content)
+    return f"/files/{filename}"
+
+
+def _save_edit_job_file(
+    upload_data: dict[str, str | bytes], role: str, index: int = 0
+) -> dict[str, str]:
+    suffix = _upload_suffix(
+        str(upload_data.get("filename") or ""),
+        str(upload_data.get("content_type") or ""),
+    )
+    filename = f"{uuid.uuid4().hex}-{role}{index if index else ''}{suffix}"
+    output_path = settings.output_dir / filename
+    content = upload_data.get("content")
+    if not isinstance(content, bytes):
+        raise HTTPException(status_code=400, detail=f"{role} upload is missing content")
+    output_path.write_bytes(content)
+    return {
+        "file": f"/files/{filename}",
+        "filename": str(upload_data.get("filename") or filename),
+        "content_type": str(upload_data.get("content_type") or "image/png"),
+    }
+
+
+def _read_persisted_edit_file(file_record: dict[str, Any]) -> dict[str, str | bytes]:
+    file_url = str(file_record.get("file") or "")
+    if not file_url.startswith("/files/"):
+        raise HTTPException(status_code=500, detail="Edit job source file is invalid")
+    file_path = settings.output_dir / Path(file_url.removeprefix("/files/")).name
+    if not file_path.is_file():
+        raise HTTPException(status_code=500, detail="Edit job source file is missing")
+    return {
+        "filename": str(file_record.get("filename") or file_path.name),
+        "content_type": str(file_record.get("content_type") or "image/png"),
+        "content": file_path.read_bytes(),
+        "file": file_url,
+    }
+
+
+def _delete_file_url(file_url: str) -> None:
+    if not file_url.startswith("/files/"):
+        return
+    file_path = settings.output_dir / Path(file_url.removeprefix("/files/")).name
+    try:
+        file_path.unlink(missing_ok=True)
+    except OSError as exc:
+        _log_event(
+            "file_delete_failed",
+            file=file_url,
+            error_type=exc.__class__.__name__,
+            error_message=str(exc) or repr(exc),
+        )
+
+
+def _cleanup_edit_job_files(job: dict[str, Any], preserve_primary_source: bool) -> None:
+    edit_inputs = job.get("edit_inputs")
+    if not isinstance(edit_inputs, dict):
+        return
+    source_files = edit_inputs.get("source_files")
+    if isinstance(source_files, list):
+        for index, source_file in enumerate(source_files):
+            if preserve_primary_source and index == 0:
+                continue
+            if isinstance(source_file, dict):
+                _delete_file_url(str(source_file.get("file") or ""))
+    mask_file = edit_inputs.get("mask_file")
+    if isinstance(mask_file, dict):
+        _delete_file_url(str(mask_file.get("file") or ""))
+
+
 def _provider_request_error_detail(
     exc: httpx.HTTPError,
     payload: dict[str, Any],
@@ -970,8 +1322,13 @@ def _save_images_to_history(
     now = int(time.time())
     requested_quality = str(payload["quality"])
     effective_quality = str(provider_json.get("quality") or payload["quality"])
-    history_records = [
-        {
+    history_records = []
+    for image in images:
+        if not (image.file or image.url):
+            continue
+        metadata = _history_file_metadata(str(image.file or ""))
+        history_records.append(
+            {
             "file": image.file,
             "url": image.url,
             "prompt": prompt,
@@ -984,11 +1341,13 @@ def _save_images_to_history(
             "model": payload["model"],
             "operation": operation,
             "source_file": source_file,
+            "file_size_bytes": metadata["file_size_bytes"],
+            "image_width": metadata["image_width"],
+            "image_height": metadata["image_height"],
+            "image_dimensions": metadata["image_dimensions"],
             "created_at": now,
-        }
-        for image in images
-        if image.file or image.url
-    ]
+            }
+        )
     _append_history(history_records)
 
 
@@ -1011,7 +1370,7 @@ def _save_failure_to_history(
                 "actual_quality": "",
                 "output_format": payload.get("output_format", ""),
                 "model": payload.get("model", settings.model),
-                "operation": "generate",
+                "operation": job.get("operation") or "generate",
                 "status": "failed",
                 "error": _redact_large_payloads(error),
                 "status_code": status_code,
@@ -1031,6 +1390,10 @@ def _append_images_with_stable_indexes(
                 url=image.url,
                 file=image.file,
                 revised_prompt=image.revised_prompt,
+                file_size_bytes=image.file_size_bytes,
+                image_width=image.image_width,
+                image_height=image.image_height,
+                image_dimensions=image.image_dimensions,
             )
         )
 
@@ -1171,6 +1534,146 @@ async def _request_provider_images(
     return provider_json, images
 
 
+def _multipart_file_summary(
+    files: list[tuple[str, tuple[str, bytes, str]]]
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "field": field,
+            "filename": file_tuple[0],
+            "content_type": file_tuple[2],
+            "bytes": len(file_tuple[1]),
+        }
+        for field, file_tuple in files
+    ]
+
+
+async def _post_multipart_with_retry(
+    client: httpx.AsyncClient,
+    url: str,
+    headers: dict[str, str],
+    data: dict[str, Any],
+    files: list[tuple[str, tuple[str, bytes, str]]],
+    request_id: str,
+) -> httpx.Response:
+    last_error: httpx.HTTPError | None = None
+    last_response: httpx.Response | None = None
+    for attempt in range(settings.provider_max_attempts):
+        try:
+            _log_event(
+                "provider_edit_request_attempt",
+                request_id=request_id,
+                attempt=attempt + 1,
+                max_attempts=settings.provider_max_attempts,
+                url=url,
+                payload=data,
+                files=_multipart_file_summary(files),
+            )
+            response = await client.post(url, headers=headers, data=data, files=files)
+            if (
+                attempt < settings.provider_max_attempts - 1
+                and _is_retryable_provider_response(response)
+            ):
+                last_response = response
+                delay = _retry_delay_seconds(attempt)
+                _log_event(
+                    "provider_edit_request_retryable_status",
+                    request_id=request_id,
+                    attempt=attempt + 1,
+                    status_code=response.status_code,
+                    detail=_provider_response_preview(response),
+                    retry_in_seconds=delay,
+                )
+                await asyncio.sleep(delay)
+                continue
+            return response
+        except httpx.HTTPError as exc:
+            last_error = exc
+            _log_event(
+                "provider_edit_request_attempt_failed",
+                request_id=request_id,
+                attempt=attempt + 1,
+                max_attempts=settings.provider_max_attempts,
+                error_type=exc.__class__.__name__,
+                error_message=str(exc) or repr(exc),
+            )
+            if attempt < settings.provider_max_attempts - 1:
+                await asyncio.sleep(_retry_delay_seconds(attempt))
+    if last_error is None:
+        if last_response is not None:
+            return last_response
+        raise RuntimeError("Provider edit request failed without a captured exception")
+    raise last_error
+
+
+async def _request_provider_edit_images(
+    client: httpx.AsyncClient,
+    headers: dict[str, str],
+    provider_payload: dict[str, Any],
+    files: list[tuple[str, tuple[str, bytes, str]]],
+    request_id: str,
+    started_at: float,
+) -> tuple[dict[str, Any], list[GeneratedImage]]:
+    try:
+        response = await _post_multipart_with_retry(
+            client,
+            settings.image_edits_url,
+            headers,
+            provider_payload,
+            files,
+            request_id,
+        )
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        detail = _provider_error_detail(exc.response)
+        _log_event(
+            "edit_provider_http_error",
+            request_id=request_id,
+            status_code=exc.response.status_code,
+            detail=detail,
+            elapsed_ms=_elapsed_ms(started_at),
+        )
+        raise HTTPException(status_code=exc.response.status_code, detail=detail) from exc
+    except httpx.HTTPError as exc:
+        detail = _provider_request_error_detail(
+            exc, provider_payload, settings.image_edits_url, started_at
+        )
+        _log_event("edit_provider_request_error", request_id=request_id, detail=detail)
+        raise HTTPException(status_code=502, detail=detail) from exc
+
+    try:
+        provider_json = response.json()
+    except ValueError as exc:
+        detail = _provider_non_json_detail(response, started_at)
+        _log_event("edit_provider_non_json", request_id=request_id, detail=detail)
+        raise HTTPException(status_code=502, detail=detail) from exc
+
+    _log_event(
+        "edit_provider_response",
+        request_id=request_id,
+        status_code=response.status_code,
+        provider_response=_redact_large_payloads(provider_json),
+        elapsed_ms=_elapsed_ms(started_at),
+    )
+
+    try:
+        images = await _normalize_images(
+            provider_json,
+            str(provider_payload.get("output_format") or "png"),
+        )
+    except HTTPException as exc:
+        _log_event(
+            "edit_normalize_error",
+            request_id=request_id,
+            detail=exc.detail,
+            provider_response=_redact_large_payloads(provider_json),
+            elapsed_ms=_elapsed_ms(started_at),
+        )
+        raise
+
+    return provider_json, images
+
+
 async def _execute_generation(
     request_id: str,
     payload: dict[str, Any],
@@ -1272,6 +1775,108 @@ async def _execute_generation(
     )
 
 
+async def _execute_edit(
+    request_id: str,
+    payload: dict[str, Any],
+    source_images: list[dict[str, str | bytes]],
+    mask_image: dict[str, str | bytes] | None,
+    started_at: float,
+    client_host: str | None = None,
+    source_file: str | None = None,
+) -> GenerateImageResponse:
+    if not settings.api_key:
+        _log_event(
+            "edit_config_error",
+            request_id=request_id,
+            detail="OPENAI_API_KEY is not configured",
+        )
+        raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not configured")
+
+    headers = {"Authorization": f"Bearer {settings.api_key}"}
+    form_payload = {key: str(value) for key, value in payload.items() if value is not None}
+    files: list[tuple[str, tuple[str, bytes, str]]] = []
+    for source_image in source_images:
+        content = source_image.get("content")
+        if not isinstance(content, bytes):
+            continue
+        files.append(
+            (
+                settings.edit_image_field,
+                (
+                    str(source_image.get("filename") or "image.png"),
+                    content,
+                    str(source_image.get("content_type") or "image/png"),
+                ),
+            )
+        )
+    if mask_image is not None:
+        mask_content = mask_image.get("content")
+        if isinstance(mask_content, bytes):
+            files.append(
+                (
+                    "mask",
+                    (
+                        str(mask_image.get("filename") or "mask.png"),
+                        mask_content,
+                        str(mask_image.get("content_type") or "image/png"),
+                    ),
+                )
+            )
+
+    _log_event(
+        "edit_start",
+        request_id=request_id,
+        provider_url=settings.image_edits_url,
+        payload=payload,
+        files=_multipart_file_summary(files),
+        client=client_host,
+    )
+
+    async with httpx.AsyncClient(timeout=settings.timeout_seconds) as client:
+        provider_json, images = await _request_provider_edit_images(
+            client,
+            headers,
+            form_payload,
+            files,
+            request_id,
+            started_at,
+        )
+
+    source_file = source_file or (
+        _save_uploaded_source_copy(source_images[0]) if source_images else None
+    )
+    _save_images_to_history(
+        images,
+        provider_json,
+        payload,
+        str(payload["prompt"]),
+        "edit",
+        source_file=source_file,
+    )
+
+    _log_event(
+        "edit_success",
+        request_id=request_id,
+        elapsed_ms=_elapsed_ms(started_at),
+        request=payload,
+        provider_quality=provider_json.get("quality"),
+        images=[
+            {
+                "file": image.file,
+                "url": image.url,
+                "revised_prompt": image.revised_prompt,
+            }
+            for image in images
+        ],
+    )
+
+    return GenerateImageResponse(
+        model=payload["model"],
+        images=images,
+        provider_response=_redact_large_payloads(provider_json),
+    )
+
+
 def _job_public(job: dict[str, Any]) -> dict[str, Any]:
     public = job.copy()
     if "result" in public:
@@ -1288,16 +1893,53 @@ async def _run_generation_job(job_id: str) -> None:
     if job.get("status") == "cancelled":
         return
     started_at = time.monotonic()
+    operation = str(job.get("operation") or "generate")
+    succeeded = False
     _update_job(job_id, status="running", started_at=int(time.time()))
-    _log_event("job_running", job_id=job_id, request_id=job_id, payload=job.get("payload"))
+    _log_event(
+        "job_running",
+        job_id=job_id,
+        request_id=job_id,
+        operation=operation,
+        payload=job.get("payload"),
+    )
     try:
-        result = await _execute_generation(
-            job_id,
-            dict(job["payload"]),
-            str(job.get("prompt", "")),
-            started_at,
-            None,
-        )
+        if operation == "edit":
+            edit_inputs = job.get("edit_inputs")
+            if not isinstance(edit_inputs, dict):
+                raise HTTPException(status_code=500, detail="Edit job is missing upload inputs")
+            raw_source_files = edit_inputs.get("source_files")
+            if not isinstance(raw_source_files, list) or not raw_source_files:
+                raise HTTPException(status_code=500, detail="Edit job has no source images")
+            source_files = [
+                item for item in raw_source_files if isinstance(item, dict)
+            ]
+            source_images = [
+                _read_persisted_edit_file(source_file) for source_file in source_files
+            ]
+            raw_mask_file = edit_inputs.get("mask_file")
+            mask_image = (
+                _read_persisted_edit_file(raw_mask_file)
+                if isinstance(raw_mask_file, dict)
+                else None
+            )
+            result = await _execute_edit(
+                job_id,
+                dict(job["payload"]),
+                source_images,
+                mask_image,
+                started_at,
+                None,
+                source_file=str(source_files[0].get("file") or "") if source_files else None,
+            )
+        else:
+            result = await _execute_generation(
+                job_id,
+                dict(job["payload"]),
+                str(job.get("prompt", "")),
+                started_at,
+                None,
+            )
     except asyncio.CancelledError:
         _update_job(
             job_id,
@@ -1337,6 +1979,7 @@ async def _run_generation_job(job_id: str) -> None:
         )
         _log_event("job_failed_unexpected", job_id=job_id, request_id=job_id, detail=detail)
     else:
+        succeeded = True
         _update_job(
             job_id,
             status="succeeded",
@@ -1344,8 +1987,10 @@ async def _run_generation_job(job_id: str) -> None:
             finished_at=int(time.time()),
             elapsed_ms=_elapsed_ms(started_at),
         )
-        _log_event("job_succeeded", job_id=job_id, request_id=job_id)
+        _log_event("job_succeeded", job_id=job_id, request_id=job_id, operation=operation)
     finally:
+        if operation == "edit":
+            _cleanup_edit_job_files(job, preserve_primary_source=succeeded)
         JOB_TASKS.pop(job_id, None)
 
 
@@ -1367,6 +2012,69 @@ async def create_job(request: Request, generation: GenerateImageRequest) -> dict
     task = asyncio.create_task(_run_generation_job(job_id))
     JOB_TASKS[job_id] = task
     _log_event("job_created", job_id=job_id, request_id=job_id, payload=payload)
+    return _job_public(job)
+
+
+@app.post("/v1/edit/jobs")
+async def create_edit_job(
+    http_request: Request,
+    image: list[UploadFile] = File(...),
+    mask: UploadFile | None = File(default=None),
+    prompt: str = Form(...),
+    model: str | None = Form(default=None),
+    size: str | None = Form(default=None),
+    quality: str | None = Form(default=None),
+    output_format: str | None = Form(default=None),
+    n: int = Form(default=1),
+    response_format: str | None = Form(default=None),
+    extra: str | None = Form(default=None),
+) -> dict[str, Any]:
+    _require_auth(http_request)
+    source_images, mask_image = await _read_edit_uploads(image, mask)
+    payload = _payload_from_edit_form(
+        prompt=prompt,
+        model=model,
+        size=size,
+        quality=quality,
+        output_format=output_format,
+        n=n,
+        response_format=response_format,
+        extra=extra,
+    )
+    persisted_files: list[str] = []
+    try:
+        source_files = [
+            _save_edit_job_file(source_image, "edit-source", index)
+            for index, source_image in enumerate(source_images, start=1)
+        ]
+        persisted_files.extend(str(source_file.get("file") or "") for source_file in source_files)
+        mask_file = _save_edit_job_file(mask_image, "edit-mask") if mask_image else None
+        if mask_file:
+            persisted_files.append(str(mask_file.get("file") or ""))
+        job_id = uuid.uuid4().hex
+        now = int(time.time())
+        job = {
+            "id": job_id,
+            "operation": "edit",
+            "status": "queued",
+            "prompt": prompt,
+            "payload": payload,
+            "edit_inputs": {
+                "source_files": source_files,
+                "mask_file": mask_file,
+            },
+            "created_at": now,
+            "updated_at": now,
+        }
+        _create_job_with_limit(job)
+    except Exception:
+        for file_url in persisted_files:
+            _delete_file_url(file_url)
+        raise
+
+    task = asyncio.create_task(_run_generation_job(job_id))
+    JOB_TASKS[job_id] = task
+    _log_event("job_created", job_id=job_id, request_id=job_id, operation="edit", payload=payload)
     return _job_public(job)
 
 
@@ -1405,6 +2113,44 @@ def cancel_job(job_id: str, request: Request) -> dict[str, Any]:
     )
     _log_event("job_cancel_requested", job_id=job_id, request_id=job_id)
     return _job_public(job)
+
+
+@app.post("/v1/edit", response_model=GenerateImageResponse)
+async def edit_image(
+    http_request: Request,
+    image: list[UploadFile] = File(...),
+    mask: UploadFile | None = File(default=None),
+    prompt: str = Form(...),
+    model: str | None = Form(default=None),
+    size: str | None = Form(default=None),
+    quality: str | None = Form(default=None),
+    output_format: str | None = Form(default=None),
+    n: int = Form(default=1),
+    response_format: str | None = Form(default=None),
+    extra: str | None = Form(default=None),
+) -> GenerateImageResponse:
+    request_id = uuid.uuid4().hex
+    started_at = time.monotonic()
+    _require_auth(http_request)
+    source_images, mask_image = await _read_edit_uploads(image, mask)
+    payload = _payload_from_edit_form(
+        prompt=prompt,
+        model=model,
+        size=size,
+        quality=quality,
+        output_format=output_format,
+        n=n,
+        response_format=response_format,
+        extra=extra,
+    )
+    return await _execute_edit(
+        request_id=request_id,
+        payload=payload,
+        source_images=source_images,
+        mask_image=mask_image,
+        started_at=started_at,
+        client_host=http_request.client.host if http_request.client else None,
+    )
 
 
 @app.post("/v1/generate", response_model=GenerateImageResponse)
@@ -1499,12 +2245,17 @@ async def _normalize_images(
             elif item.get("url"):
                 file_url = await _download_image(client, str(item["url"]), index)
 
+            metadata = _history_file_metadata(str(file_url or ""))
             images.append(
                 GeneratedImage(
                     index=index,
                     url=item.get("url"),
                     file=file_url,
                     revised_prompt=item.get("revised_prompt"),
+                    file_size_bytes=metadata["file_size_bytes"],
+                    image_width=metadata["image_width"],
+                    image_height=metadata["image_height"],
+                    image_dimensions=str(metadata["image_dimensions"] or ""),
                 )
             )
 

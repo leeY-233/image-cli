@@ -6,7 +6,7 @@
     <title>Image CLI — Studio</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
     <style>
       @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
       @keyframes fadeInUp {
@@ -23,43 +23,58 @@
         100% { background-position: 200% center; }
       }
       :root {
-        --bg: #f5f6fa;
-        --bg-surface: #ffffff;
-        --bg-card: #ffffff;
-        --bg-elevated: #f0f1f5;
-        --bg-input: #f0f1f5;
-        --border: #e2e4ea;
-        --border-subtle: #ecedf2;
-        --border-hover: #d0d2da;
-        --border-focus: rgba(56, 140, 255, 0.5);
-        --text: #1a1d2e;
-        --text-secondary: #5a6078;
-        --text-dim: #8a8ea4;
-        --text-muted: #b0b4c4;
-        --accent: #388cff;
-        --accent-light: #5ba0ff;
-        --accent-glow: rgba(56, 140, 255, 0.1);
-        --accent-subtle: rgba(56, 140, 255, 0.06);
-        --danger: #e5484d;
-        --danger-bg: rgba(229, 72, 77, 0.06);
-        --danger-border: rgba(229, 72, 77, 0.15);
-        --success: #30a46c;
-        --success-bg: rgba(48, 164, 108, 0.08);
+        --bg: #eff3f0;
+        --bg-surface: rgba(255, 255, 255, 0.78);
+        --bg-card: rgba(255, 255, 255, 0.84);
+        --bg-solid-card: #ffffff;
+        --bg-elevated: rgba(255, 255, 255, 0.64);
+        --bg-input: rgba(255, 255, 255, 0.62);
+        --border: rgba(23, 35, 29, 0.11);
+        --border-subtle: rgba(23, 35, 29, 0.08);
+        --border-hover: rgba(23, 35, 29, 0.2);
+        --border-focus: rgba(31, 122, 83, 0.42);
+        --text: #17231d;
+        --text-secondary: #46554c;
+        --text-dim: #647168;
+        --text-muted: #93a096;
+        --accent: #1f7a53;
+        --accent-light: #279264;
+        --accent-glow: rgba(31, 122, 83, 0.1);
+        --accent-subtle: rgba(31, 122, 83, 0.09);
+        --accent-warm: #d97706;
+        --danger: #c2410c;
+        --danger-bg: rgba(194, 65, 12, 0.08);
+        --danger-border: rgba(194, 65, 12, 0.2);
+        --success: #1f7a53;
+        --success-bg: rgba(31, 122, 83, 0.09);
+        --shadow: 0 24px 70px rgba(30, 48, 39, 0.14);
         --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
         --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
         --sidebar-w: clamp(390px, 25vw, 520px);
-        --radius: 10px;
-        --radius-sm: 7px;
+        --radius: 18px;
+        --radius-sm: 12px;
       }
       * { box-sizing: border-box; margin: 0; padding: 0; }
       body {
         height: 100vh;
         overflow: hidden;
-        background: var(--bg);
+        background:
+          radial-gradient(circle at 12% 12%, rgba(31, 122, 83, 0.16), transparent 28rem),
+          radial-gradient(circle at 84% 8%, rgba(217, 119, 6, 0.14), transparent 26rem),
+          linear-gradient(135deg, #f7f3ea 0%, var(--bg) 52%, #e5ece8 100%);
         color: var(--text);
         font-family: var(--font-body);
         font-size: 14px;
         line-height: 1.5;
+      }
+      body::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        background-image: linear-gradient(rgba(23, 35, 29, 0.035) 1px, transparent 1px), linear-gradient(90deg, rgba(23, 35, 29, 0.035) 1px, transparent 1px);
+        background-size: 32px 32px;
+        mask-image: linear-gradient(to bottom, #000, transparent 82%);
+        pointer-events: none;
       }
       button, textarea, input, select { font-family: inherit; }
       a { color: var(--accent); text-decoration: none; }
@@ -71,63 +86,72 @@
 
       /* ─── Layout ─── */
       .app {
+        position: relative;
+        z-index: 1;
         height: 100vh;
         display: grid;
         grid-template-columns: var(--sidebar-w) 1fr;
+        gap: 16px;
+        padding: 16px;
         overflow: hidden;
       }
 
       /* ─── Sidebar ─── */
       .sidebar {
-        height: 100vh;
+        height: calc(100vh - 32px);
         display: flex;
         flex-direction: column;
         background: var(--bg-surface);
-        border-right: 1px solid var(--border);
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(16px);
         overflow: hidden;
+        animation: fadeInUp 0.35s ease both;
       }
       .sidebar-header {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 18px 22px 14px;
+        padding: 18px 18px 13px;
       }
       .logo {
         display: flex;
         align-items: center;
         gap: 9px;
-        font-size: 15px;
-        font-weight: 700;
-        letter-spacing: -0.02em;
+        font-size: 16px;
+        font-weight: 800;
+        letter-spacing: -0.04em;
       }
       .logo-icon {
-        width: 26px;
-        height: 26px;
+        width: 32px;
+        height: 32px;
         display: grid;
         place-items: center;
         background: var(--accent-subtle);
-        border: 1px solid rgba(56, 140, 255, 0.12);
-        border-radius: 6px;
+        border: 1px solid rgba(31, 122, 83, 0.18);
+        border-radius: 10px;
       }
-      .logo-icon svg { width: 13px; height: 13px; color: var(--accent); }
+      .logo-icon svg { width: 16px; height: 16px; color: var(--accent); }
       .top-actions { display: flex; gap: 4px; }
       .icon-btn {
         width: 30px;
         height: 30px;
         display: grid;
         place-items: center;
-        background: transparent;
+        background: rgba(255, 255, 255, 0.52);
         border: 1px solid var(--border);
-        border-radius: 7px;
+        border-radius: 10px;
         color: var(--text-dim);
         cursor: pointer;
         transition: all 0.15s;
         text-decoration: none;
       }
       .icon-btn:hover {
-        background: var(--bg-elevated);
+        background: #fff;
         color: var(--text-secondary);
         border-color: var(--border-hover);
+        transform: translateY(-1px);
         text-decoration: none;
       }
       .icon-btn svg { width: 14px; height: 14px; }
@@ -139,16 +163,114 @@
         display: flex;
         flex-direction: column;
         gap: 12px;
-        padding: 0 22px 18px;
+        padding: 0 18px 18px;
         overflow-y: auto;
       }
       .field { display: grid; gap: 6px; }
       .field-label {
         font-size: 11px;
-        font-weight: 600;
+        font-weight: 800;
         text-transform: uppercase;
-        letter-spacing: 0.06em;
+        letter-spacing: 0.08em;
         color: var(--text-dim);
+      }
+      .mode-switch {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+        padding: 4px;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.38);
+      }
+      .mode-btn {
+        min-height: 38px;
+        border: 0;
+        border-radius: 12px;
+        background: transparent;
+        color: var(--text-dim);
+        font-size: 13px;
+        font-weight: 800;
+        cursor: pointer;
+        transition: all 0.18s;
+      }
+      .mode-btn:hover {
+        background: rgba(255, 255, 255, 0.72);
+        color: var(--text);
+      }
+      .mode-btn.active {
+        background: linear-gradient(135deg, var(--accent), #125f3d);
+        color: #fff;
+        box-shadow: 0 12px 26px rgba(31, 122, 83, 0.2);
+      }
+      .edit-fields {
+        display: grid;
+        gap: 10px;
+        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.34);
+      }
+      .edit-fields[hidden] { display: none; }
+      .file-input {
+        width: 100%;
+        padding: 10px;
+        border: 1px dashed var(--border-hover);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.58);
+        color: var(--text-dim);
+        font-size: 12px;
+        cursor: pointer;
+      }
+      .file-hint {
+        color: var(--text-muted);
+        font-size: 10px;
+        line-height: 1.45;
+      }
+      .edit-preview {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(74px, 1fr));
+        gap: 6px;
+      }
+      .edit-preview:empty { display: none; }
+      .edit-preview-card {
+        position: relative;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: #fff;
+      }
+      .edit-preview-remove {
+        position: absolute;
+        top: 5px;
+        right: 5px;
+        width: 20px;
+        height: 20px;
+        display: grid;
+        place-items: center;
+        border: 1px solid rgba(194, 65, 12, 0.24);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.86);
+        color: var(--danger);
+        font-size: 13px;
+        font-weight: 900;
+        cursor: pointer;
+      }
+      .edit-preview-card img {
+        width: 100%;
+        aspect-ratio: 1;
+        object-fit: cover;
+        display: block;
+        background: #edf2ef;
+      }
+      .edit-preview-card span {
+        display: block;
+        padding: 5px 6px;
+        color: var(--text-muted);
+        font: 9px/1.2 var(--font-mono);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
       .prompt-head {
         display: flex;
@@ -170,7 +292,7 @@
         padding: 10px 12px;
         background: var(--bg-input);
         border: 1px solid var(--border);
-        border-radius: var(--radius);
+        border-radius: 16px;
         color: var(--text);
         font-size: 13px;
         line-height: 1.6;
@@ -179,54 +301,55 @@
         transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
       }
       textarea::placeholder { color: var(--text-muted); }
-      textarea:hover { border-color: var(--border-hover); background: #fff; }
+      textarea:hover { border-color: var(--border-hover); background: rgba(255, 255, 255, 0.86); }
       textarea:focus {
         border-color: var(--border-focus);
-        box-shadow: 0 0 0 3px var(--accent-glow);
+        box-shadow: 0 0 0 4px var(--accent-glow);
         background: #fff;
       }
 
-      .segmented { display: flex; gap: 3px; }
+      .segmented { display: flex; gap: 5px; }
       .seg-btn {
         flex: 1;
-        padding: 7px 4px;
+        padding: 8px 5px;
         background: var(--bg-input);
         border: 1px solid var(--border);
-        border-radius: 6px;
+        border-radius: 12px;
         color: var(--text-dim);
         font-size: 12px;
-        font-weight: 500;
+        font-weight: 750;
         text-align: center;
         cursor: pointer;
         transition: all 0.15s;
         user-select: none;
       }
       .seg-btn:hover {
-        background: var(--bg-elevated);
+        background: #fff;
         color: var(--text-secondary);
         border-color: var(--border-hover);
+        transform: translateY(-1px);
       }
       .seg-btn.active {
         background: var(--accent-subtle);
-        border-color: rgba(56, 140, 255, 0.3);
+        border-color: rgba(31, 122, 83, 0.34);
         color: var(--accent);
-        font-weight: 600;
+        font-weight: 800;
       }
 
       .ratio-grid {
         display: grid;
         grid-template-columns: repeat(3, 1fr);
-        gap: 3px;
+        gap: 5px;
       }
       .ratio-btn {
         position: relative;
-        padding: 8px 4px 6px;
+        padding: 9px 5px 7px;
         background: var(--bg-input);
         border: 1px solid var(--border);
-        border-radius: 6px;
+        border-radius: 12px;
         color: var(--text-dim);
         font-size: 11px;
-        font-weight: 600;
+        font-weight: 750;
         text-align: center;
         cursor: pointer;
         transition: all 0.15s;
@@ -244,7 +367,7 @@
         transform: translate(-50%, 4px);
         padding: 4px 7px;
         background: var(--text);
-        border-radius: 5px;
+        border-radius: 8px;
         color: #fff;
         font-size: 10px;
         font-family: var(--font-mono);
@@ -260,15 +383,16 @@
         transform: translate(-50%, 0);
       }
       .ratio-btn:hover {
-        background: var(--bg-elevated);
+        background: #fff;
         color: var(--text-secondary);
         border-color: var(--border-hover);
+        transform: translateY(-1px);
       }
       .ratio-btn.active {
         background: var(--accent-subtle);
-        border-color: rgba(56, 140, 255, 0.3);
+        border-color: rgba(31, 122, 83, 0.34);
         color: var(--accent);
-        font-weight: 700;
+        font-weight: 800;
       }
       .ratio-shape {
         display: block;
@@ -296,20 +420,20 @@
       .custom-size-row[hidden] { display: none; }
       .custom-size-input {
         width: 100%;
-        padding: 7px 10px;
+        padding: 9px 11px;
         background: var(--bg-input);
         border: 1px solid var(--border);
-        border-radius: 6px;
+        border-radius: 12px;
         color: var(--text);
         font-size: 12px;
         font-weight: 500;
         outline: none;
         transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
       }
-      .custom-size-input:hover { border-color: var(--border-hover); background: #fff; }
+      .custom-size-input:hover { border-color: var(--border-hover); background: rgba(255, 255, 255, 0.86); }
       .custom-size-input:focus {
         border-color: var(--border-focus);
-        box-shadow: 0 0 0 3px var(--accent-glow);
+        box-shadow: 0 0 0 4px var(--accent-glow);
         background: #fff;
       }
       .custom-size-input.invalid {
@@ -319,7 +443,7 @@
       }
       .custom-size-input.invalid:focus {
         border-color: var(--danger);
-        box-shadow: 0 0 0 3px rgba(229, 72, 77, 0.12);
+        box-shadow: 0 0 0 4px rgba(194, 65, 12, 0.12);
       }
       .custom-size-hint {
         margin-top: 6px;
@@ -343,10 +467,10 @@
       }
       .count-input {
         width: 68px;
-        padding: 7px 10px;
+        padding: 9px 10px;
         background: var(--bg-input);
         border: 1px solid var(--border);
-        border-radius: 6px;
+        border-radius: 12px;
         color: var(--text);
         font-size: 13px;
         font-weight: 500;
@@ -354,22 +478,23 @@
         outline: none;
         transition: border-color 0.2s, box-shadow 0.2s, background 0.2s;
       }
-      .count-input:hover { border-color: var(--border-hover); background: #fff; }
+      .count-input:hover { border-color: var(--border-hover); background: rgba(255, 255, 255, 0.86); }
       .count-input:focus {
         border-color: var(--border-focus);
-        box-shadow: 0 0 0 3px var(--accent-glow);
+        box-shadow: 0 0 0 4px var(--accent-glow);
         background: #fff;
       }
 
       .submit-btn {
         width: 100%;
-        padding: 10px 18px;
-        background: var(--accent);
+        min-height: 48px;
+        padding: 12px 18px;
+        background: linear-gradient(135deg, var(--accent), #125f3d);
         color: #fff;
         border: 0;
-        border-radius: var(--radius);
+        border-radius: 16px;
         font-size: 14px;
-        font-weight: 600;
+        font-weight: 800;
         letter-spacing: -0.01em;
         cursor: pointer;
         transition: all 0.2s;
@@ -386,9 +511,8 @@
         transition: opacity 0.3s;
       }
       .submit-btn:hover:not(:disabled) {
-        background: var(--accent-light);
-        transform: translateY(-1px);
-        box-shadow: 0 2px 12px rgba(56, 140, 255, 0.25);
+        transform: translateY(-2px);
+        box-shadow: 0 18px 38px rgba(31, 122, 83, 0.28);
       }
       .submit-btn:hover::after { opacity: 1; animation: shimmer 1.5s infinite; }
       .submit-btn:active:not(:disabled) { transform: translateY(0); }
@@ -396,50 +520,57 @@
 
       /* ─── Workspace ─── */
       .workspace {
-        height: 100vh;
+        height: calc(100vh - 32px);
         display: grid;
         grid-template-rows: auto 1fr var(--history-h, 260px);
         overflow: hidden;
-        background: var(--bg);
+        background: var(--bg-surface);
+        border: 1px solid var(--border);
+        border-radius: 24px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(16px);
         position: relative;
+        animation: fadeInUp 0.4s 0.04s ease both;
       }
 
       .topbar {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 12px 24px;
+        padding: 15px 18px;
         border-bottom: 1px solid var(--border-subtle);
-        background: var(--bg-surface);
+        background: transparent;
       }
       .topbar-title {
-        font-size: 12px;
-        font-weight: 600;
+        font-size: 13px;
+        font-weight: 800;
         color: var(--text-dim);
         text-transform: uppercase;
-        letter-spacing: 0.06em;
+        letter-spacing: 0.08em;
       }
       .topbar-actions { display: flex; align-items: center; gap: 6px; }
       .status-pill {
         display: inline-flex;
         align-items: center;
         gap: 6px;
-        padding: 5px 10px;
-        background: var(--bg-card);
+        min-height: 32px;
+        padding: 7px 12px;
+        background: rgba(255, 255, 255, 0.55);
         border: 1px solid var(--border);
         border-radius: 999px;
         color: var(--text-dim);
         font-size: 11px;
-        font-weight: 500;
+        font-weight: 650;
         font-family: var(--font-mono);
         cursor: pointer;
         transition: all 0.15s;
         user-select: none;
       }
       .status-pill:hover {
-        background: var(--bg-elevated);
+        background: #fff;
         border-color: var(--border-hover);
-        color: var(--text-secondary);
+        color: var(--text);
+        transform: translateY(-1px);
       }
       .status-dot {
         width: 6px;
@@ -448,11 +579,11 @@
         background: var(--text-muted);
         transition: all 0.3s;
       }
-      .status-dot.live { background: var(--success); box-shadow: 0 0 5px rgba(48, 164, 108, 0.3); }
-      .status-dot.busy { background: var(--accent); box-shadow: 0 0 5px rgba(56, 140, 255, 0.3); animation: pulse 1.5s ease infinite; }
+      .status-dot.live { background: var(--success); box-shadow: 0 0 5px rgba(31, 122, 83, 0.35); }
+      .status-dot.busy { background: var(--accent-warm); box-shadow: 0 0 5px rgba(217, 119, 6, 0.35); animation: pulse 1.5s ease infinite; }
       .link-btn {
         padding: 5px 10px;
-        background: transparent;
+        background: rgba(255, 255, 255, 0.5);
         border: 1px solid var(--border);
         border-radius: 999px;
         color: var(--text-dim);
@@ -463,7 +594,7 @@
         transition: all 0.15s;
       }
       .link-btn:hover {
-        background: var(--bg-elevated);
+        background: #fff;
         border-color: var(--border-hover);
         color: var(--text-secondary);
         text-decoration: none;
@@ -472,7 +603,7 @@
       .result-area {
         min-height: 0;
         overflow: hidden;
-        padding: 18px 24px;
+        padding: 18px;
         display: grid;
       }
       .result-grid {
@@ -486,9 +617,9 @@
       }
       .result-card {
         min-height: 0;
-        background: var(--bg-card);
+        background: var(--bg-solid-card);
         border: 1px solid var(--border);
-        border-radius: var(--radius);
+        border-radius: 18px;
         overflow: hidden;
         display: grid;
         grid-template-rows: minmax(0, 1fr) auto;
@@ -498,7 +629,7 @@
       .result-card:hover {
         border-color: var(--border-hover);
         transform: translateY(-2px);
-        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+        box-shadow: 0 18px 40px rgba(30, 48, 39, 0.13);
       }
       .result-card img {
         width: 100%;
@@ -507,7 +638,7 @@
         object-fit: contain;
         object-position: center;
         display: block;
-        background: var(--bg-elevated);
+        background: #edf2ef;
         cursor: pointer;
       }
       .result-card-footer {
@@ -525,21 +656,23 @@
       }
       .result-card-actions { display: flex; gap: 3px; flex-shrink: 0; }
       .mini-btn {
-        padding: 3px 8px;
-        background: transparent;
+        min-height: 28px;
+        padding: 5px 10px;
+        background: rgba(255, 255, 255, 0.55);
         border: 1px solid var(--border);
-        border-radius: 5px;
+        border-radius: 999px;
         color: var(--text-dim);
         font-size: 11px;
-        font-weight: 500;
+        font-weight: 650;
         cursor: pointer;
         transition: all 0.12s;
         white-space: nowrap;
       }
       .mini-btn:hover {
-        background: var(--bg-elevated);
+        background: #fff;
         border-color: var(--border-hover);
-        color: var(--text-secondary);
+        color: var(--text);
+        transform: translateY(-1px);
       }
 
       .empty-state {
@@ -552,6 +685,9 @@
         font-size: 13px;
         text-align: center;
         padding: 40px;
+        border: 1px dashed var(--border-hover);
+        border-radius: 22px;
+        background: rgba(255, 255, 255, 0.28);
       }
       .empty-state .icon { opacity: 0.4; line-height: 0; }
       .loader-state {
@@ -565,7 +701,7 @@
       .spinner {
         width: 28px;
         height: 28px;
-        border: 2px solid var(--border);
+        border: 3px solid rgba(31, 122, 83, 0.16);
         border-top-color: var(--accent);
         border-radius: 50%;
         animation: spin 0.8s linear infinite;
@@ -576,7 +712,7 @@
         padding: 14px;
         background: var(--danger-bg);
         border: 1px solid var(--danger-border);
-        border-radius: var(--radius);
+        border-radius: 16px;
         color: var(--danger);
         font-size: 12px;
         font-family: var(--font-mono);
@@ -595,7 +731,7 @@
         grid-template-rows: auto 1fr;
         overflow: hidden;
         position: relative;
-        background: var(--bg-surface);
+        background: rgba(255, 255, 255, 0.38);
       }
       .history-resize {
         position: absolute;
@@ -614,7 +750,7 @@
         width: 36px;
         height: 3px;
         border-radius: 99px;
-        background: var(--border);
+        background: rgba(23, 35, 29, 0.16);
         transition: background 0.15s;
       }
       .history-resize:hover::before { background: var(--text-muted); }
@@ -622,14 +758,14 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 10px 24px 6px;
+        padding: 12px 18px 7px;
       }
       .history-header h3 {
         font-size: 12px;
-        font-weight: 600;
+        font-weight: 800;
         color: var(--text-dim);
         text-transform: uppercase;
-        letter-spacing: 0.06em;
+        letter-spacing: 0.08em;
       }
       .history-header h3 span {
         font-size: 10px;
@@ -640,6 +776,28 @@
         letter-spacing: 0;
       }
       .history-actions { display: flex; align-items: center; gap: 3px; }
+      .history-tabs {
+        display: inline-flex;
+        gap: 3px;
+        padding: 3px;
+        margin-right: 6px;
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.38);
+      }
+      .history-tab {
+        min-height: 24px;
+        padding: 4px 9px;
+        border: 0;
+        border-radius: 999px;
+        background: transparent;
+        color: var(--text-dim);
+        font-size: 10px;
+        font-weight: 800;
+        cursor: default;
+        transition: all 0.12s;
+      }
+      .history-tab.active { background: var(--accent-subtle); color: var(--accent); }
       .history-count {
         font-size: 10px;
         font-family: var(--font-mono);
@@ -650,7 +808,7 @@
         min-height: 0;
         overflow-y: auto;
         overflow-x: hidden;
-        padding: 0 24px 10px;
+        padding: 0 18px 12px;
         display: flex;
         flex-direction: column;
         gap: 1px;
@@ -659,19 +817,20 @@
         width: 100%;
         min-width: 0;
         display: grid;
-        grid-template-columns: 16px minmax(0, 1fr) 88px;
+        grid-template-columns: 16px minmax(0, 1fr) 126px;
         align-items: center;
         gap: 8px;
-        padding: 7px 10px;
-        background: transparent;
+        padding: 8px 10px;
+        background: rgba(255, 255, 255, 0.28);
         border: 1px solid transparent;
-        border-radius: 6px;
+        border-radius: 12px;
         cursor: pointer;
         transition: all 0.12s;
       }
       .history-row:hover {
-        background: var(--bg-elevated);
+        background: rgba(255, 255, 255, 0.78);
         border-color: var(--border);
+        transform: translateY(-1px);
       }
       .history-check {
         width: 14px;
@@ -695,12 +854,12 @@
         font-family: var(--font-mono);
       }
       .history-view {
-        width: 58px;
+        width: 54px;
         height: 24px;
         padding: 2px 7px;
         background: transparent;
         border: 1px solid var(--border);
-        border-radius: 4px;
+        border-radius: 999px;
         color: var(--text-dim);
         font-size: 10px;
         font-weight: 600;
@@ -716,27 +875,44 @@
         padding: 0;
         background: transparent;
         border: 1px solid var(--danger-border);
-        border-radius: 4px;
+        border-radius: 999px;
         color: var(--danger);
         font-size: 13px;
         font-weight: 800;
         cursor: pointer;
         transition: all 0.12s;
       }
+      .history-edit {
+        width: 38px;
+        height: 24px;
+        padding: 2px 7px;
+        background: transparent;
+        border: 1px solid rgba(31, 122, 83, 0.24);
+        border-radius: 999px;
+        color: var(--accent);
+        font-size: 10px;
+        font-weight: 700;
+        cursor: pointer;
+        transition: all 0.12s;
+      }
+      .history-edit:hover {
+        background: var(--accent-subtle);
+        border-color: rgba(31, 122, 83, 0.38);
+      }
       .history-delete:hover {
         background: var(--danger-bg);
         border-color: var(--danger);
       }
       .history-row-actions {
-        width: 88px;
-        min-width: 88px;
+        width: 126px;
+        min-width: 126px;
         display: flex;
         align-items: center;
         justify-content: flex-end;
         gap: 5px;
       }
       .history-row:hover .history-view {
-        border-color: rgba(56, 140, 255, 0.3);
+        border-color: rgba(31, 122, 83, 0.34);
         color: var(--accent);
       }
 
@@ -750,8 +926,9 @@
         max-height: min(440px, calc(100vh - 100px));
         background: var(--bg-card);
         border: 1px solid var(--border);
-        border-radius: var(--radius);
-        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+        border-radius: 18px;
+        box-shadow: 0 20px 56px rgba(30, 48, 39, 0.18);
+        backdrop-filter: blur(16px);
         display: grid;
         grid-template-rows: auto 1fr;
         overflow: hidden;
@@ -765,7 +942,7 @@
         padding: 10px 12px;
         border-bottom: 1px solid var(--border-subtle);
       }
-      .jobs-head strong { font-size: 12px; font-weight: 600; color: var(--text-secondary); }
+      .jobs-head strong { font-size: 12px; font-weight: 800; color: var(--text-secondary); }
       .jobs-list {
         overflow-y: auto;
         padding: 4px;
@@ -777,15 +954,15 @@
         grid-template-columns: 1fr auto;
         align-items: center;
         gap: 8px;
-        padding: 7px 8px;
-        background: transparent;
+        padding: 8px 9px;
+        background: rgba(255, 255, 255, 0.28);
         border: 1px solid transparent;
-        border-radius: 6px;
+        border-radius: 12px;
         cursor: pointer;
         transition: all 0.12s;
         text-align: left;
       }
-      .job-item:hover { background: var(--bg-elevated); border-color: var(--border); }
+      .job-item:hover { background: #fff; border-color: var(--border); transform: translateY(-1px); }
       .job-meta { min-width: 0; display: grid; gap: 1px; }
       .job-prompt {
         font-size: 12px;
@@ -807,7 +984,7 @@
         text-transform: uppercase;
         letter-spacing: 0.04em;
       }
-      .job-status.running { border-color: rgba(56, 140, 255, 0.3); color: var(--accent); }
+      .job-status.running { border-color: rgba(31, 122, 83, 0.34); color: var(--accent); }
       .job-status.queued { border-color: var(--border); color: var(--text-muted); }
       .job-cancel {
         width: 20px;
@@ -832,7 +1009,7 @@
         z-index: 200;
         width: 100vw;
         height: 100dvh;
-        background: rgba(0, 0, 0, 0.4);
+        background: rgba(23, 35, 29, 0.42);
         backdrop-filter: blur(8px);
         display: grid;
         grid-template-columns: minmax(0, 1fr) clamp(280px, 24vw, 380px);
@@ -850,7 +1027,9 @@
         display: flex;
         align-items: center;
         justify-content: center;
-        background: var(--bg);
+        background:
+          radial-gradient(circle at 15% 15%, rgba(31, 122, 83, 0.12), transparent 22rem),
+          linear-gradient(135deg, #f7f3ea 0%, var(--bg) 100%);
         border-radius: var(--radius) 0 0 var(--radius);
         padding: 24px 12px;
         overflow: hidden;
@@ -863,7 +1042,7 @@
         object-fit: contain;
         object-position: center;
         display: block;
-        border-radius: 6px;
+        border-radius: 12px;
       }
       .modal-image-wrap img[hidden] { display: none; }
       .modal-failure {
@@ -873,7 +1052,7 @@
         padding: 16px;
         background: var(--danger-bg);
         border: 1px solid var(--danger-border);
-        border-radius: var(--radius);
+        border-radius: 16px;
         color: var(--danger);
         font: 12px/1.6 var(--font-mono);
         white-space: pre-wrap;
@@ -882,7 +1061,7 @@
       .modal-failure[hidden] { display: none; }
       .modal-info {
         min-height: 0;
-        background: var(--bg-card);
+        background: var(--bg-solid-card);
         border-radius: 0 var(--radius) var(--radius) 0;
         display: grid;
         grid-template-rows: auto auto minmax(0, 1fr) auto;
@@ -895,13 +1074,13 @@
         align-items: center;
         justify-content: space-between;
       }
-      .modal-info-head h3 { font-size: 14px; font-weight: 600; }
+      .modal-info-head h3 { font-size: 14px; font-weight: 800; }
       .modal-meta { font-size: 10px; font-family: var(--font-mono); color: var(--text-muted); }
       .modal-prompt {
         padding: 10px;
-        background: var(--bg-elevated);
+        background: #edf2ef;
         border: 1px solid var(--border);
-        border-radius: 6px;
+        border-radius: 14px;
         color: var(--text-secondary);
         font-size: 12px;
         line-height: 1.6;
@@ -1006,6 +1185,26 @@
           </div>
         </div>
         <form class="gen-form" id="form">
+          <div class="field">
+            <div class="field-label">Mode</div>
+            <div class="mode-switch" id="modeSwitch">
+              <button class="mode-btn active" type="button" data-mode="generate">Generate</button>
+              <button class="mode-btn" type="button" data-mode="edit">Edit</button>
+            </div>
+          </div>
+          <div class="edit-fields" id="editFields" hidden>
+            <div class="field">
+              <div class="field-label">Source Image</div>
+              <input class="file-input" id="editImageInput" type="file" accept="image/png,image/jpeg,image/webp" multiple />
+              <div class="file-hint">Upload one or more reference/source images. They will run as a background edit Job.</div>
+            </div>
+            <div class="field">
+              <div class="field-label">Mask Optional</div>
+              <input class="file-input" id="editMaskInput" type="file" accept="image/png,image/jpeg,image/webp" />
+              <div class="file-hint">Transparent mask areas are usually the editable region. Leave empty for whole-image edits.</div>
+            </div>
+            <div class="edit-preview" id="editPreview"></div>
+          </div>
           <div class="field prompt-area">
             <div class="prompt-head">
               <div class="field-label">Prompt</div>
@@ -1116,6 +1315,10 @@
           <div class="history-header">
             <h3>History <span>last 50 records</span></h3>
             <div class="history-actions">
+              <div class="history-tabs" id="historyTabs">
+                <span class="history-tab active" data-history-mode="generate">Generate</span>
+                <span class="history-tab" data-history-mode="edit">Edit</span>
+              </div>
               <span class="history-count" id="historyCount">--</span>
               <button class="mini-btn" id="selectAllHistory" type="button" hidden>Select All</button>
               <button class="mini-btn" id="selectHistory" type="button">Select</button>
@@ -1145,6 +1348,7 @@
         <div class="modal-actions">
           <a class="mini-btn" id="modalOpen" href="#" target="_blank">Open</a>
           <a class="mini-btn" id="modalDownload" href="#" download>Download</a>
+          <button class="mini-btn" id="modalEditAgain" type="button" hidden>Edit Again</button>
           <button class="mini-btn" id="modalReuse" type="button">Reuse Prompt</button>
           <button class="mini-btn" id="modalCopy" type="button">Copy Prompt</button>
         </div>
@@ -1157,6 +1361,7 @@
       const historyPanel = document.querySelector("#historyPanel");
       const historyResize = document.querySelector("#historyResize");
       const history = document.querySelector("#history");
+      const historyTabs = document.querySelector("#historyTabs");
       const historyCount = document.querySelector("#historyCount");
       const selectAllHistory = document.querySelector("#selectAllHistory");
       const selectHistory = document.querySelector("#selectHistory");
@@ -1189,9 +1394,15 @@
       const modalPrompt = document.querySelector("#modalPrompt");
       const modalOpen = document.querySelector("#modalOpen");
       const modalDownload = document.querySelector("#modalDownload");
+      const modalEditAgain = document.querySelector("#modalEditAgain");
       const modalReuse = document.querySelector("#modalReuse");
       const modalCopy = document.querySelector("#modalCopy");
       const modalClose = document.querySelector("#modalClose");
+      const modeSwitch = document.querySelector("#modeSwitch");
+      const editFields = document.querySelector("#editFields");
+      const editImageInput = document.querySelector("#editImageInput");
+      const editMaskInput = document.querySelector("#editMaskInput");
+      const editPreview = document.querySelector("#editPreview");
 
       const sizeRatioMap = {
         "1024x1024": "1:1", "2048x2048": "1:1", "2880x2880": "1:1",
@@ -1211,6 +1422,7 @@
       };
       let activeHistoryRecord = null;
       let selectingHistory = false;
+      let selectedHistoryMode = "generate";
       let allHistoryRecords = [];
       let visibleHistoryRecords = [];
       const selectedHistoryIds = new Set();
@@ -1221,12 +1433,16 @@
       let watchedJob = null;
       let jobsRefreshTimer = null;
       const historyHeightKey = "imageCliHistoryHeight_v2";
+      const modeStorageKey = "imageCliMode_v1";
 
       let selectedRatio = "1:1";
       let selectedResolution = "1k";
       let selectedSize = resolutionSizeMap[selectedRatio][selectedResolution];
       let selectedQuality = "auto";
       let selectedOutputFormat = "png";
+      let selectedMode = "generate";
+      let editSourceFiles = [];
+      let editPreviewUrls = [];
       const maxImagePixels = 3840 * 2160;
       function resolveSelectedSize() {
         return resolutionSizeMap[selectedRatio]?.[selectedResolution] || "1024x1024";
@@ -1238,6 +1454,102 @@
       function setCustomSizePreview() {
         sizePreview.textContent = `${customWidth.value || "-"}x${customHeight.value || "-"}`;
       }
+      function operationLabel(operation) {
+        return operation === "edit" ? "Edit" : "Generate";
+      }
+      function busyLabel(operation) {
+        return operation === "edit" ? "Editing" : "Generating";
+      }
+      function setMode(mode) {
+        selectedMode = mode === "edit" ? "edit" : "generate";
+        localStorage.setItem(modeStorageKey, selectedMode);
+        modeSwitch.querySelectorAll(".mode-btn").forEach(btn => {
+          btn.classList.toggle("active", btn.dataset.mode === selectedMode);
+        });
+        editFields.hidden = selectedMode !== "edit";
+        submit.textContent = selectedMode === "edit" ? "Edit Image" : "Generate";
+        promptInput.placeholder = selectedMode === "edit"
+          ? "Describe how to edit the uploaded image..."
+          : "Describe the image you want to create...";
+        setHistoryMode(selectedMode);
+        if (!timer && !watchedJobId) refreshIdleStatus();
+      }
+      function clearEditPreviews() {
+        editPreviewUrls.forEach(url => URL.revokeObjectURL(url));
+        editPreviewUrls = [];
+      }
+      function syncEditImageInput() {
+        const transfer = new DataTransfer();
+        editSourceFiles.forEach(file => transfer.items.add(file));
+        editImageInput.files = transfer.files;
+      }
+      function appendEditSourceFiles(files) {
+        for (const file of files) {
+          const duplicate = editSourceFiles.some(item =>
+            item.name === file.name && item.size === file.size && item.lastModified === file.lastModified
+          );
+          if (!duplicate) editSourceFiles.push(file);
+        }
+        syncEditImageInput();
+        renderEditPreviews();
+      }
+      function removeEditSourceFile(index) {
+        editSourceFiles.splice(index, 1);
+        syncEditImageInput();
+        renderEditPreviews();
+      }
+      function clearEditInputs() {
+        editSourceFiles = [];
+        syncEditImageInput();
+        editImageInput.value = "";
+        editMaskInput.value = "";
+        renderEditPreviews();
+      }
+      function addEditPreview(file, label, index = -1) {
+        const url = URL.createObjectURL(file);
+        editPreviewUrls.push(url);
+        const card = document.createElement("div");
+        card.className = "edit-preview-card";
+        const img = document.createElement("img");
+        img.src = url;
+        img.alt = file.name;
+        const caption = document.createElement("span");
+        caption.textContent = `${label}: ${file.name}`;
+        if (index >= 0) {
+          const remove = document.createElement("button");
+          remove.className = "edit-preview-remove";
+          remove.type = "button";
+          remove.textContent = "\u00d7";
+          remove.title = "Remove image";
+          remove.addEventListener("click", () => removeEditSourceFile(index));
+          card.append(remove);
+        }
+        card.append(img, caption);
+        editPreview.append(card);
+      }
+      function renderEditPreviews() {
+        clearEditPreviews();
+        editPreview.replaceChildren();
+        editSourceFiles.forEach((file, index) => addEditPreview(file, `image ${index + 1}`, index));
+        if (editMaskInput.files[0]) addEditPreview(editMaskInput.files[0], "mask");
+      }
+      function setEditSourceFile(file) {
+        editSourceFiles = [file];
+        syncEditImageInput();
+        editMaskInput.value = "";
+        renderEditPreviews();
+      }
+      modeSwitch.addEventListener("click", (e) => {
+        const btn = e.target.closest(".mode-btn");
+        if (!btn || submit.disabled) return;
+        setMode(btn.dataset.mode);
+      });
+      editImageInput.addEventListener("change", () => {
+        appendEditSourceFiles([...editImageInput.files]);
+        editImageInput.value = "";
+        syncEditImageInput();
+      });
+      editMaskInput.addEventListener("change", renderEditPreviews);
 
       ratioGrid.addEventListener("click", (e) => {
         const btn = e.target.closest(".ratio-btn");
@@ -1360,16 +1672,33 @@
       }
       function formatOutputFormat(v) { return v ? `fmt:${v}` : ""; }
       function formatSize(v) { return v ? (sizeRatioMap[v] || v) : ""; }
+      function formatImageSpec(record = {}) {
+        const dimensions = record.image_dimensions || (
+          record.image_width && record.image_height ? `${record.image_width}x${record.image_height}` : ""
+        );
+        return dimensions ? `spec:${dimensions}` : "";
+      }
+      function formatFileSize(bytes) {
+        const value = Number(bytes);
+        if (!Number.isFinite(value) || value <= 0) return "";
+        if (value < 1024) return `file:${value}B`;
+        if (value < 1024 * 1024) return `file:${(value / 1024).toFixed(1)}KB`;
+        return `file:${(value / 1024 / 1024).toFixed(2)}MB`;
+      }
       function formatStatus(v) { return v === "failed" ? "failed" : "success"; }
+      function formatOperation(v) { return v === "edit" ? "edit" : "gen"; }
       function promptPreview(job) {
         const t = (job.payload?.prompt || job.prompt || "no prompt");
-        return t.length > 50 ? t.slice(0, 50) + "..." : t;
+        const prefix = job.operation === "edit" ? "[Edit] " : "";
+        const text = t.length > 50 ? t.slice(0, 50) + "..." : t;
+        return prefix + text;
       }
       function clearPromptAfterSuccess(prompt) {
         if (promptInput.value === prompt) promptInput.value = "";
       }
       clearPrompt.addEventListener("click", () => {
         promptInput.value = "";
+        if (selectedMode === "edit") clearEditInputs();
         if (watchedJobId && isActiveJob(watchedJob)) {
           moveJobToBg(watchedJob);
           return;
@@ -1381,6 +1710,50 @@
           const ta = document.createElement("textarea");
           ta.value = text; ta.style.cssText = "position:fixed;left:-9999px";
           document.body.append(ta); ta.select(); document.execCommand("copy"); ta.remove();
+        }
+      }
+      function filenameFromSource(src, fallback = "history-image.png") {
+        try {
+          const pathname = new URL(src, window.location.href).pathname;
+          return pathname.split("/").pop() || fallback;
+        } catch {
+          return src.split("/").pop() || fallback;
+        }
+      }
+      async function loadHistoryImageAsFile(record) {
+        const detailRes = await fetch(`/v1/history/${record.id}`);
+        if (!detailRes.ok) throw new Error(`History detail failed: HTTP ${detailRes.status}`);
+        const detail = await detailRes.json();
+        const src = detail.file || detail.url;
+        if (!src) throw new Error("This history item has no image file to edit.");
+        const imageRes = await fetch(src);
+        if (!imageRes.ok) throw new Error(`Image load failed: HTTP ${imageRes.status}`);
+        const blob = await imageRes.blob();
+        return {
+          detail,
+          file: new File([blob], filenameFromSource(src), { type: blob.type || "image/png" }),
+        };
+      }
+      async function startEditFromHistory(record) {
+        if (submit.disabled) return;
+        try {
+          const { detail, file } = await loadHistoryImageAsFile(record);
+          setMode("edit");
+          setEditSourceFile(file);
+          promptInput.value = "";
+          promptInput.focus();
+          result.replaceChildren(Object.assign(document.createElement("div"), {
+            className: "empty-state",
+            innerHTML: `<div><strong>Ready to edit this history image.</strong><div style="margin-top:6px;color:var(--text-muted);font-size:12px;">Write an edit prompt, keep the same output options, then run Edit Image.</div></div>`
+          }));
+          setStatus("Edit source loaded", "live");
+          closeModal();
+          activeHistoryRecord = detail;
+        } catch (err) {
+          result.replaceChildren(Object.assign(document.createElement("div"), {
+            className: "error-box",
+            textContent: `Could not load this history image for editing:\n${err.message}`
+          }));
         }
       }
 
@@ -1418,7 +1791,7 @@
         footer.className = "result-card-footer";
         const metaEl = document.createElement("div");
         metaEl.className = "result-card-meta";
-        metaEl.textContent = [formatSize(meta.size), formatQuality(meta), formatOutputFormat(meta.output_format)].filter(Boolean).join(" \u00b7 ");
+        metaEl.textContent = [formatOperation(meta.operation), formatSize(meta.size), formatImageSpec(meta), formatFileSize(meta.file_size_bytes), formatQuality(meta), formatOutputFormat(meta.output_format)].filter(Boolean).join(" \u00b7 ");
         const actions = document.createElement("div");
         actions.className = "result-card-actions";
         const openBtn = document.createElement("a");
@@ -1430,6 +1803,16 @@
         card.append(img, footer);
         card.style.animationDelay = `${Math.random() * 0.12}s`;
         return card;
+      }
+
+      function setHistoryMode(mode) {
+        selectedHistoryMode = mode === "edit" ? "edit" : "generate";
+        historyTabs.querySelectorAll(".history-tab").forEach(tab => {
+          tab.classList.toggle("active", tab.dataset.historyMode === selectedHistoryMode);
+        });
+        selectedHistoryIds.clear();
+        selectingHistory = false;
+        renderHistory(allHistoryRecords);
       }
 
       function createHistoryRow(record) {
@@ -1447,10 +1830,16 @@
         const prompt = document.createElement("div"); prompt.className = "history-prompt";
         prompt.textContent = record.prompt || "history image";
         const detail = document.createElement("div"); detail.className = "history-detail";
-        detail.textContent = [formatSize(record.size), formatQuality(record), formatOutputFormat(record.output_format), formatDate(record.created_at), formatStatus(record.status)].filter(Boolean).join(" \u00b7 ");
+        detail.textContent = [formatOperation(record.operation), formatSize(record.size), formatImageSpec(record), formatFileSize(record.file_size_bytes), formatQuality(record), formatOutputFormat(record.output_format), formatDate(record.created_at), formatStatus(record.status)].filter(Boolean).join(" \u00b7 ");
         info.append(prompt, detail);
         const actions = document.createElement("div"); actions.className = "history-row-actions";
         const view = document.createElement("button"); view.className = "history-view"; view.type = "button"; view.textContent = "View";
+        const edit = document.createElement("button"); edit.className = "history-edit"; edit.type = "button"; edit.textContent = "Edit";
+        edit.title = record.operation === "edit" ? "Edit this result again" : "Use this image as the edit source";
+        edit.addEventListener("click", async e => {
+          e.stopPropagation();
+          await startEditFromHistory(record);
+        });
         const del = document.createElement("button"); del.className = "history-delete"; del.type = "button"; del.textContent = "\u00d7";
         del.title = "Delete";
         del.addEventListener("click", async e => {
@@ -1461,7 +1850,7 @@
           selectedHistoryIds.delete(record.id);
           await loadHistory();
         });
-        actions.append(view, del);
+        actions.append(view, edit, del);
         row.append(check, info, actions);
         row.addEventListener("click", () => {
           if (selectingHistory) { check.checked = !check.checked; check.checked ? selectedHistoryIds.add(record.id) : selectedHistoryIds.delete(record.id); updateSelectionUi(); return; }
@@ -1470,10 +1859,13 @@
         return row;
       }
       function renderHistory(records) {
-        visibleHistoryRecords = records.filter(r => !r.operation || r.operation === "generate");
+        visibleHistoryRecords = records.filter(r => {
+          const operation = r.operation || "generate";
+          return selectedHistoryMode === "edit" ? operation === "edit" : operation === "generate";
+        });
         historyCount.textContent = `${visibleHistoryRecords.length}`;
         if (!visibleHistoryRecords.length) {
-          history.replaceChildren(Object.assign(document.createElement("div"), { className: "empty-state", style: "min-height:40px;font-size:11px;", textContent: "No history yet" }));
+          history.replaceChildren(Object.assign(document.createElement("div"), { className: "empty-state", style: "min-height:40px;font-size:11px;", textContent: `No ${selectedHistoryMode} history yet` }));
           updateSelectionUi(); return;
         }
         history.replaceChildren(...visibleHistoryRecords.map(r => createHistoryRow(r)));
@@ -1534,7 +1926,7 @@
 
       async function openModal(record) {
         modalPrompt.textContent = "Loading...";
-        modalMeta.textContent = [formatSize(record.size), formatQuality(record), formatOutputFormat(record.output_format), formatDate(record.created_at), formatStatus(record.status)].filter(Boolean).join(" \u00b7 ");
+        modalMeta.textContent = [formatOperation(record.operation), formatSize(record.size), formatImageSpec(record), formatFileSize(record.file_size_bytes), formatQuality(record), formatOutputFormat(record.output_format), formatDate(record.created_at), formatStatus(record.status)].filter(Boolean).join(" \u00b7 ");
         modal.hidden = false;
         const res = await fetch(`/v1/history/${record.id}`);
         if (!res.ok) { modalPrompt.textContent = `Load failed: HTTP ${res.status}`; return; }
@@ -1546,20 +1938,27 @@
           modalImage.removeAttribute("src");
           modalImage.alt = "failed generation";
           modalFailure.hidden = false;
-          modalFailure.textContent = `Generation failed${record.status_code ? ` (${record.status_code})` : ""}:\n${formatHistoryError(record)}`;
-          modalMeta.textContent = [formatSize(record.size), formatQuality(record), formatOutputFormat(record.output_format), formatDate(record.created_at), formatStatus(record.status)].filter(Boolean).join(" \u00b7 ");
+          modalFailure.textContent = `${operationLabel(record.operation)} failed${record.status_code ? ` (${record.status_code})` : ""}:\n${formatHistoryError(record)}`;
+          modalMeta.textContent = [formatOperation(record.operation), formatSize(record.size), formatImageSpec(record), formatFileSize(record.file_size_bytes), formatQuality(record), formatOutputFormat(record.output_format), formatDate(record.created_at), formatStatus(record.status)].filter(Boolean).join(" \u00b7 ");
           modalPrompt.textContent = record.prompt || "No prompt";
           modalOpen.removeAttribute("href");
           modalDownload.removeAttribute("href");
+          modalEditAgain.hidden = true;
+          modalReuse.hidden = true;
+          modalCopy.hidden = true;
           return;
         }
         modalImage.hidden = false;
         modalFailure.hidden = true;
         modalFailure.textContent = "";
         modalImage.src = src; modalImage.alt = record.prompt || "history image";
-        modalMeta.textContent = [formatSize(record.size), formatQuality(record), formatOutputFormat(record.output_format), formatDate(record.created_at), formatStatus(record.status)].filter(Boolean).join(" \u00b7 ");
+        modalMeta.textContent = [formatOperation(record.operation), formatSize(record.size), formatImageSpec(record), formatFileSize(record.file_size_bytes), formatQuality(record), formatOutputFormat(record.output_format), formatDate(record.created_at), formatStatus(record.status)].filter(Boolean).join(" \u00b7 ");
         modalPrompt.textContent = record.prompt || "No prompt";
         modalOpen.href = src; modalDownload.href = src; modalDownload.download = src.split("/").pop() || "image.png";
+        const isEditHistory = record.operation === "edit";
+        modalEditAgain.hidden = !isEditHistory;
+        modalReuse.hidden = isEditHistory;
+        modalCopy.hidden = isEditHistory;
       }
       function closeModal() {
         modal.hidden = true;
@@ -1567,11 +1966,18 @@
         modalImage.removeAttribute("src");
         modalFailure.hidden = true;
         modalFailure.textContent = "";
+        modalEditAgain.hidden = true;
+        modalReuse.hidden = false;
+        modalCopy.hidden = false;
         activeHistoryRecord = null;
       }
       modalClose.addEventListener("click", closeModal);
       modal.addEventListener("click", e => { if (e.target === modal) closeModal(); });
       modalReuse.addEventListener("click", () => { if (!activeHistoryRecord) return; promptInput.value = activeHistoryRecord.prompt || ""; promptInput.focus(); closeModal(); });
+      modalEditAgain.addEventListener("click", async () => {
+        if (!activeHistoryRecord) return;
+        await startEditFromHistory(activeHistoryRecord);
+      });
       modalCopy.addEventListener("click", async () => {
         if (!activeHistoryRecord) return;
         await copyText(activeHistoryRecord.prompt || "");
@@ -1581,7 +1987,7 @@
       window.addEventListener("keydown", e => { if (e.key === "Escape" && !modal.hidden) closeModal(); });
 
       function isActiveJob(j) { return j?.status === "queued" || j?.status === "running"; }
-      function bodyFromJob(j) { const p = j.payload || {}; return { prompt: j.prompt || p.prompt || "", size: p.size || "", quality: p.quality || "auto", output_format: p.output_format || "png", n: p.n || 1 }; }
+      function bodyFromJob(j) { const p = j.payload || {}; return { operation: j.operation || "generate", prompt: j.prompt || p.prompt || "", size: p.size || "", quality: p.quality || "auto", output_format: p.output_format || "png", n: p.n || 1 }; }
       function renderJobsPopover() {
         const jobs = [...backgroundJobs.values()].filter(isActiveJob);
         backgroundJobs.clear(); jobs.forEach(j => backgroundJobs.set(j.id, j));
@@ -1594,7 +2000,7 @@
           const meta = document.createElement("div"); meta.className = "job-meta";
           const prompt = document.createElement("div"); prompt.className = "job-prompt"; prompt.textContent = promptPreview(job);
           const detail = document.createElement("div"); detail.className = "job-detail";
-          detail.textContent = [formatSize(bodyFromJob(job).size), bodyFromJob(job).quality, bodyFromJob(job).output_format, job.id.slice(0, 8)].join(" \u00b7 ");
+          detail.textContent = [formatOperation(job.operation), formatSize(bodyFromJob(job).size), bodyFromJob(job).quality, bodyFromJob(job).output_format, job.id.slice(0, 8)].join(" \u00b7 ");
           meta.append(prompt, detail);
           const side = document.createElement("div"); side.className = "job-side";
           const status = document.createElement("span"); status.className = `job-status ${job.status}`; status.textContent = job.status;
@@ -1654,8 +2060,8 @@
         if (cur?.dataset.backgroundJobId !== job.id) return false;
         if (job.status === "succeeded") {
           const body = bodyFromJob(job), data = job.result;
-          const meta = { prompt: body.prompt, size: body.size, quality: data?.provider_response?.quality || body.quality, output_format: data?.provider_response?.output_format || body.output_format };
-          const imgs = (data?.images || []).filter(i => i.file || i.url).map(i => createImageCard(i, meta));
+          const meta = { operation: body.operation, prompt: body.prompt, size: body.size, quality: data?.provider_response?.quality || body.quality, output_format: data?.provider_response?.output_format || body.output_format };
+          const imgs = (data?.images || []).filter(i => i.file || i.url).map(i => createImageCard(i, { ...meta, ...i }));
           stopBusy(`${imgs.length} image${imgs.length === 1 ? "" : "s"}`);
           result.replaceChildren(...imgs); clearPromptAfterSuccess(body.prompt); return true;
         }
@@ -1696,7 +2102,7 @@
       function enterJob(job) {
         backgroundJobs.delete(job.id); renderJobsPopover(); jobsPopover.hidden = true;
         const token = ++activePollToken; watchedJobId = job.id; watchedJob = job; submit.disabled = true;
-        setBusy("Generating"); showJobState(job, bodyFromJob(job), token); pollJob(job.id, bodyFromJob(job), token);
+        setBusy(busyLabel(job.operation)); showJobState(job, bodyFromJob(job), token); pollJob(job.id, bodyFromJob(job), token);
       }
       function showJobState(job, body, token) {
         if (token === activePollToken) watchedJob = job;
@@ -1705,7 +2111,7 @@
         wrap.className = "loader-state";
         wrap.innerHTML = `
           ${canCancel ? '<div class="spinner"></div>' : ""}
-          <div class="loader-text">Job ${job.status}</div>
+          <div class="loader-text">${operationLabel(job.operation)} job ${job.status}</div>
           <div class="loader-sub">${job.id}</div>
           ${canCancel ? '<div class="inline-actions"><button class="mini-btn" data-act="bg" type="button">Background</button><button class="mini-btn" data-act="cancel" type="button" style="border-color:var(--danger-border);color:var(--danger);">Cancel</button></div>' : ""}
         `;
@@ -1740,17 +2146,17 @@
           backgroundJobs.delete(jobId); renderJobsPopover(); submit.disabled = false; watchedJobId = null; watchedJob = null;
           if (job.status === "cancelled") {
             stopBusy("Cancelled");
-            result.replaceChildren(Object.assign(document.createElement("div"), { className: "empty-state", textContent: "Generation cancelled." }));
+            result.replaceChildren(Object.assign(document.createElement("div"), { className: "empty-state", textContent: `${operationLabel(body.operation)} cancelled.` }));
             return;
           }
           if (job.status === "failed") {
             stopBusy("Failed");
-            result.replaceChildren(Object.assign(document.createElement("div"), { className: "error-box", textContent: `Generation failed (${job.status_code || 500}):\n${JSON.stringify(job.error || job, null, 2)}` }));
+            result.replaceChildren(Object.assign(document.createElement("div"), { className: "error-box", textContent: `${operationLabel(body.operation)} failed (${job.status_code || 500}):\n${JSON.stringify(job.error || job, null, 2)}` }));
             return;
           }
           const data = job.result;
-          const meta = { prompt: body.prompt, size: body.size, quality: data?.provider_response?.quality || body.quality, output_format: data?.provider_response?.output_format || body.output_format };
-          const imgs = (data?.images || []).filter(i => i.file || i.url).map(i => createImageCard(i, meta));
+          const meta = { operation: body.operation, prompt: body.prompt, size: body.size, quality: data?.provider_response?.quality || body.quality, output_format: data?.provider_response?.output_format || body.output_format };
+          const imgs = (data?.images || []).filter(i => i.file || i.url).map(i => createImageCard(i, { ...meta, ...i }));
           stopBusy(`${imgs.length} image${imgs.length === 1 ? "" : "s"}`);
           result.replaceChildren(...imgs);
           await loadHistory(); clearPromptAfterSuccess(body.prompt);
@@ -1762,17 +2168,35 @@
         e.preventDefault();
         const size = isCustomSizeSelected() ? getCustomSize() : selectedSize;
         if (!size) return;
+        if (selectedMode === "edit" && !editSourceFiles.length) {
+          result.replaceChildren(Object.assign(document.createElement("div"), { className: "error-box", textContent: "Please upload at least one source image for Edit mode." }));
+          editImageInput.focus();
+          return;
+        }
         const token = ++activePollToken; watchedJobId = null; watchedJob = null;
-        setBusy("Generating"); submit.disabled = true;
+        setBusy(busyLabel(selectedMode)); submit.disabled = true;
         result.replaceChildren(Object.assign(document.createElement("div"), {
           className: "loader-state",
-          innerHTML: '<div class="spinner"></div><div class="loader-text">Generating...</div><div class="loader-sub">4K or complex prompts may take a few minutes</div>'
+          innerHTML: `<div class="spinner"></div><div class="loader-text">${busyLabel(selectedMode)}...</div><div class="loader-sub">4K, edits, or complex prompts may take a few minutes</div>`
         }));
         const count = Math.min(10, Math.max(1, parseInt(form.querySelector('[name="n"]').value, 10) || 1));
-        const body = { prompt: promptInput.value, size, quality: selectedQuality, output_format: selectedOutputFormat, n: count };
+        const body = { operation: selectedMode, prompt: promptInput.value, size, quality: selectedQuality, output_format: selectedOutputFormat, n: count };
         let res, data;
         try {
-          res = await fetch("/v1/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+          if (selectedMode === "edit") {
+            const formData = new FormData();
+            editSourceFiles.forEach(file => formData.append("image", file));
+            if (editMaskInput.files[0]) formData.append("mask", editMaskInput.files[0]);
+            formData.append("prompt", body.prompt);
+            formData.append("size", body.size);
+            formData.append("quality", body.quality);
+            formData.append("output_format", body.output_format);
+            formData.append("n", String(body.n));
+            formData.append("response_format", "b64_json");
+            res = await fetch("/v1/edit/jobs", { method: "POST", body: formData });
+          } else {
+            res = await fetch("/v1/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+          }
           data = await res.json();
         } catch (err) {
           stopBusy("Failed"); submit.disabled = false; watchedJobId = null; watchedJob = null;
@@ -1781,7 +2205,7 @@
         }
         if (!res.ok) {
           stopBusy("Failed"); submit.disabled = false; watchedJobId = null; watchedJob = null;
-          result.replaceChildren(Object.assign(document.createElement("div"), { className: "error-box", textContent: `Generation failed (${res.status}):\n${formatError(data)}` }));
+          result.replaceChildren(Object.assign(document.createElement("div"), { className: "error-box", textContent: `${operationLabel(selectedMode)} failed (${res.status}):\n${formatError(data)}` }));
           return;
         }
         watchedJobId = data.id; watchedJob = data; backgroundJobs.delete(data.id); renderJobsPopover();
@@ -1796,11 +2220,13 @@
         if (!active) { renderJobsPopover(); return; }
         backgroundJobs.delete(active.id); renderJobsPopover();
         const p = active.payload || {};
-        const body = { prompt: active.prompt || p.prompt || "", size: p.size || "", quality: p.quality || "auto", output_format: p.output_format || "png", n: p.n || 1 };
-        const token = ++activePollToken; watchedJobId = active.id; watchedJob = active; setBusy("Generating"); submit.disabled = true;
+        const body = { operation: active.operation || "generate", prompt: active.prompt || p.prompt || "", size: p.size || "", quality: p.quality || "auto", output_format: p.output_format || "png", n: p.n || 1 };
+        const token = ++activePollToken; watchedJobId = active.id; watchedJob = active; setBusy(busyLabel(active.operation)); submit.disabled = true;
         showJobState(active, body, token); await pollJob(active.id, body, token);
       }
 
+      setMode(localStorage.getItem(modeStorageKey) || "generate");
+      window.addEventListener("beforeunload", clearEditPreviews);
       loadHistory(); resumeActiveJob(); refreshBgJobs();
       jobsRefreshTimer = setInterval(refreshBgJobs, 10000);
     </script>
