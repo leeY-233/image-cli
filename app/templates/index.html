@@ -150,6 +150,12 @@
         letter-spacing: 0.06em;
         color: var(--text-dim);
       }
+      .prompt-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
       .prompt-area {
         flex: 1;
         min-height: 130px;
@@ -229,7 +235,7 @@
         place-items: center;
         gap: 4px;
       }
-      .ratio-btn::after {
+      .ratio-btn[data-size-label]::after {
         content: attr(data-size-label);
         position: absolute;
         left: 50%;
@@ -249,7 +255,7 @@
         pointer-events: none;
         transition: opacity 0.15s, transform 0.15s;
       }
-      .ratio-btn:hover::after {
+      .ratio-btn[data-size-label]:hover::after {
         opacity: 1;
         transform: translate(-50%, 0);
       }
@@ -322,6 +328,12 @@
         line-height: 1.4;
       }
       .custom-size-hint[hidden] { display: none; }
+      .resolution-hint {
+        margin-top: 6px;
+        color: var(--text-muted);
+        font-size: 11px;
+        font-family: var(--font-mono);
+      }
 
       .count-row {
         display: grid;
@@ -995,31 +1007,34 @@
         </div>
         <form class="gen-form" id="form">
           <div class="field prompt-area">
-            <div class="field-label">Prompt</div>
+            <div class="prompt-head">
+              <div class="field-label">Prompt</div>
+              <button class="mini-btn" id="clearPrompt" type="button">Clear</button>
+            </div>
             <textarea name="prompt" placeholder="Describe the image you want to create..." required></textarea>
           </div>
           <div class="field">
             <div class="field-label">Aspect Ratio</div>
             <div class="ratio-grid" id="ratioGrid">
-              <button type="button" class="ratio-btn active" data-value="1024x1024" data-ratio="1:1" data-size-label="1024x1024">
+              <button type="button" class="ratio-btn active" data-ratio="1:1">
                 <i class="ratio-shape ratio-1-1"></i>1:1
               </button>
-              <button type="button" class="ratio-btn" data-value="768x1024" data-ratio="3:4" data-size-label="768x1024">
+              <button type="button" class="ratio-btn" data-ratio="3:4">
                 <i class="ratio-shape ratio-3-4"></i>3:4
               </button>
-              <button type="button" class="ratio-btn" data-value="1024x768" data-ratio="4:3" data-size-label="1024x768">
+              <button type="button" class="ratio-btn" data-ratio="4:3">
                 <i class="ratio-shape ratio-4-3"></i>4:3
               </button>
-              <button type="button" class="ratio-btn" data-value="1152x2048" data-ratio="9:16" data-size-label="1152x2048">
+              <button type="button" class="ratio-btn" data-ratio="9:16">
                 <i class="ratio-shape ratio-9-16"></i>9:16
               </button>
-              <button type="button" class="ratio-btn" data-value="2048x1152" data-ratio="16:9" data-size-label="2048x1152">
+              <button type="button" class="ratio-btn" data-ratio="16:9">
                 <i class="ratio-shape ratio-16-9"></i>16:9
               </button>
-              <button type="button" class="ratio-btn" data-value="3840x1648" data-ratio="21:9" data-size-label="3840x1648">
+              <button type="button" class="ratio-btn" data-ratio="21:9">
                 <i class="ratio-shape ratio-21-9"></i>21:9
               </button>
-              <button type="button" class="ratio-btn" data-value="custom" data-ratio="custom" data-size-label="Custom size">
+              <button type="button" class="ratio-btn" data-ratio="custom" data-size-label="Custom size">
                 <i class="ratio-shape ratio-custom"></i>Custom
               </button>
             </div>
@@ -1028,6 +1043,15 @@
               <input class="custom-size-input" id="customHeight" type="number" min="16" max="4096" step="16" value="1024" aria-label="Custom height" />
             </div>
             <div class="custom-size-hint" id="customSizeHint" hidden></div>
+            <div class="resolution-hint" id="sizePreview">1024x1024</div>
+          </div>
+          <div class="field" id="resolutionField">
+            <div class="field-label">Resolution</div>
+            <div class="segmented" id="resolutionSeg">
+              <button type="button" class="seg-btn active" data-value="1k">1K</button>
+              <button type="button" class="seg-btn" data-value="2k">2K</button>
+              <button type="button" class="seg-btn" data-value="4k">4K</button>
+            </div>
           </div>
           <div class="field">
             <div class="field-label">Quality</div>
@@ -1147,7 +1171,11 @@
       const jobList = document.querySelector("#jobList");
       const submit = document.querySelector("#submit");
       const promptInput = form.elements.prompt;
+      const clearPrompt = document.querySelector("#clearPrompt");
       const ratioGrid = document.querySelector("#ratioGrid");
+      const resolutionField = document.querySelector("#resolutionField");
+      const resolutionSeg = document.querySelector("#resolutionSeg");
+      const sizePreview = document.querySelector("#sizePreview");
       const customSizeRow = document.querySelector("#customSizeRow");
       const customWidth = document.querySelector("#customWidth");
       const customHeight = document.querySelector("#customHeight");
@@ -1166,9 +1194,20 @@
       const modalClose = document.querySelector("#modalClose");
 
       const sizeRatioMap = {
-        "1024x1024": "1:1", "768x1024": "3:4", "1024x768": "4:3",
-        "3840x1648": "21:9", "1024x1536": "2:3", "1536x1024": "3:2",
-        "1152x2048": "9:16", "2048x1152": "16:9",
+        "1024x1024": "1:1", "2048x2048": "1:1", "2880x2880": "1:1",
+        "768x1024": "3:4", "1536x2048": "3:4", "2448x3264": "3:4",
+        "1024x768": "4:3", "2048x1536": "4:3", "3264x2448": "4:3",
+        "576x1024": "9:16", "1152x2048": "9:16", "2160x3840": "9:16",
+        "1024x576": "16:9", "2048x1152": "16:9", "3840x2160": "16:9",
+        "1008x432": "21:9", "2016x864": "21:9", "3808x1632": "21:9",
+      };
+      const resolutionSizeMap = {
+        "1:1": { "1k": "1024x1024", "2k": "2048x2048", "4k": "2880x2880" },
+        "3:4": { "1k": "768x1024", "2k": "1536x2048", "4k": "2448x3264" },
+        "4:3": { "1k": "1024x768", "2k": "2048x1536", "4k": "3264x2448" },
+        "9:16": { "1k": "576x1024", "2k": "1152x2048", "4k": "2160x3840" },
+        "16:9": { "1k": "1024x576", "2k": "2048x1152", "4k": "3840x2160" },
+        "21:9": { "1k": "1008x432", "2k": "2016x864", "4k": "3808x1632" },
       };
       let activeHistoryRecord = null;
       let selectingHistory = false;
@@ -1179,24 +1218,45 @@
       let timer = null;
       let activePollToken = 0;
       let watchedJobId = null;
+      let watchedJob = null;
       let jobsRefreshTimer = null;
       const historyHeightKey = "imageCliHistoryHeight_v2";
 
-      let selectedSize = "1024x1024";
+      let selectedRatio = "1:1";
+      let selectedResolution = "1k";
+      let selectedSize = resolutionSizeMap[selectedRatio][selectedResolution];
       let selectedQuality = "auto";
       let selectedOutputFormat = "png";
       const maxImagePixels = 3840 * 2160;
+      function resolveSelectedSize() {
+        return resolutionSizeMap[selectedRatio]?.[selectedResolution] || "1024x1024";
+      }
+      function setSelectedSizeFromControls() {
+        selectedSize = resolveSelectedSize();
+        sizePreview.textContent = selectedSize;
+      }
+      function setCustomSizePreview() {
+        sizePreview.textContent = `${customWidth.value || "-"}x${customHeight.value || "-"}`;
+      }
 
       ratioGrid.addEventListener("click", (e) => {
         const btn = e.target.closest(".ratio-btn");
         if (!btn) return;
         ratioGrid.querySelectorAll(".ratio-btn").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
-        customSizeRow.hidden = btn.dataset.value !== "custom";
-        selectedSize = btn.dataset.value === "custom" ? `${customWidth.value}x${customHeight.value}` : btn.dataset.value;
+        selectedRatio = btn.dataset.ratio;
+        const customSelected = selectedRatio === "custom";
+        customSizeRow.hidden = !customSelected;
+        resolutionField.hidden = customSelected;
+        if (customSelected) {
+          selectedSize = `${customWidth.value}x${customHeight.value}`;
+          setCustomSizePreview();
+          validateCustomSize(false);
+        }
+        else setSelectedSizeFromControls();
       });
       function isCustomSizeSelected() {
-        return ratioGrid.querySelector(".ratio-btn.active")?.dataset.value === "custom";
+        return selectedRatio === "custom";
       }
       function validateCustomSize(showHint = true) {
         const width = Number(customWidth.value);
@@ -1232,8 +1292,17 @@
           if (!isCustomSizeSelected()) return;
           const size = validateCustomSize(true);
           selectedSize = size || `${customWidth.value}x${customHeight.value}`;
+          setCustomSizePreview();
         });
         input.addEventListener("blur", () => { if (isCustomSizeSelected()) validateCustomSize(true); });
+      });
+      resolutionSeg.addEventListener("click", (e) => {
+        const btn = e.target.closest(".seg-btn");
+        if (!btn) return;
+        resolutionSeg.querySelectorAll(".seg-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        selectedResolution = btn.dataset.value;
+        if (!isCustomSizeSelected()) setSelectedSizeFromControls();
       });
       qualitySeg.addEventListener("click", (e) => {
         const btn = e.target.closest(".seg-btn");
@@ -1299,6 +1368,14 @@
       function clearPromptAfterSuccess(prompt) {
         if (promptInput.value === prompt) promptInput.value = "";
       }
+      clearPrompt.addEventListener("click", () => {
+        promptInput.value = "";
+        if (watchedJobId && isActiveJob(watchedJob)) {
+          moveJobToBg(watchedJob);
+          return;
+        }
+        promptInput.focus();
+      });
       async function copyText(text) {
         try { await navigator.clipboard.writeText(text); } catch {
           const ta = document.createElement("textarea");
@@ -1607,7 +1684,7 @@
         }
       }
       function moveJobToBg(job) {
-        activePollToken++; watchedJobId = null; submit.disabled = false;
+        activePollToken++; watchedJobId = null; watchedJob = null; submit.disabled = false;
         if (!backgroundJobs.has(job.id)) { backgroundJobs.set(job.id, job); pollBgJob(job.id); }
         jobsPopover.hidden = false;
         renderJobsPopover();
@@ -1618,10 +1695,11 @@
 
       function enterJob(job) {
         backgroundJobs.delete(job.id); renderJobsPopover(); jobsPopover.hidden = true;
-        const token = ++activePollToken; watchedJobId = job.id; submit.disabled = true;
+        const token = ++activePollToken; watchedJobId = job.id; watchedJob = job; submit.disabled = true;
         setBusy("Generating"); showJobState(job, bodyFromJob(job), token); pollJob(job.id, bodyFromJob(job), token);
       }
       function showJobState(job, body, token) {
+        if (token === activePollToken) watchedJob = job;
         const canCancel = job.status === "queued" || job.status === "running";
         const wrap = document.createElement("div");
         wrap.className = "loader-state";
@@ -1636,7 +1714,7 @@
           wrap.querySelector('[data-act="cancel"]').addEventListener("click", async () => {
             await fetch(`/v1/jobs/${job.id}/cancel`, { method: "POST" });
             if (token !== activePollToken) return;
-            stopBusy("Cancelled"); submit.disabled = false; watchedJobId = null;
+            stopBusy("Cancelled"); submit.disabled = false; watchedJobId = null; watchedJob = null;
             await pollJob(job.id, body, token);
           });
         }
@@ -1650,7 +1728,7 @@
           const job = await res.json();
           if (token !== activePollToken) return;
           if (!res.ok) {
-            stopBusy("Failed"); submit.disabled = false; watchedJobId = null;
+            stopBusy("Failed"); submit.disabled = false; watchedJobId = null; watchedJob = null;
             result.replaceChildren(Object.assign(document.createElement("div"), { className: "error-box", textContent: `Job query failed (${res.status}):\n${formatError(job)}` }));
             return;
           }
@@ -1659,7 +1737,7 @@
             const delay = polls < 5 ? 2000 : polls < 9 ? 5000 : 10000;
             await new Promise(r => setTimeout(r, delay)); continue;
           }
-          backgroundJobs.delete(jobId); renderJobsPopover(); submit.disabled = false; watchedJobId = null;
+          backgroundJobs.delete(jobId); renderJobsPopover(); submit.disabled = false; watchedJobId = null; watchedJob = null;
           if (job.status === "cancelled") {
             stopBusy("Cancelled");
             result.replaceChildren(Object.assign(document.createElement("div"), { className: "empty-state", textContent: "Generation cancelled." }));
@@ -1684,7 +1762,7 @@
         e.preventDefault();
         const size = isCustomSizeSelected() ? getCustomSize() : selectedSize;
         if (!size) return;
-        const token = ++activePollToken; watchedJobId = null;
+        const token = ++activePollToken; watchedJobId = null; watchedJob = null;
         setBusy("Generating"); submit.disabled = true;
         result.replaceChildren(Object.assign(document.createElement("div"), {
           className: "loader-state",
@@ -1697,16 +1775,16 @@
           res = await fetch("/v1/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
           data = await res.json();
         } catch (err) {
-          stopBusy("Failed"); submit.disabled = false; watchedJobId = null;
+          stopBusy("Failed"); submit.disabled = false; watchedJobId = null; watchedJob = null;
           result.replaceChildren(Object.assign(document.createElement("div"), { className: "error-box", textContent: `Request failed: ${err.message}` }));
           return;
         }
         if (!res.ok) {
-          stopBusy("Failed"); submit.disabled = false; watchedJobId = null;
+          stopBusy("Failed"); submit.disabled = false; watchedJobId = null; watchedJob = null;
           result.replaceChildren(Object.assign(document.createElement("div"), { className: "error-box", textContent: `Generation failed (${res.status}):\n${formatError(data)}` }));
           return;
         }
-        watchedJobId = data.id; backgroundJobs.delete(data.id); renderJobsPopover();
+        watchedJobId = data.id; watchedJob = data; backgroundJobs.delete(data.id); renderJobsPopover();
         showJobState(data, body, token); await pollJob(data.id, body, token);
       });
 
@@ -1719,7 +1797,7 @@
         backgroundJobs.delete(active.id); renderJobsPopover();
         const p = active.payload || {};
         const body = { prompt: active.prompt || p.prompt || "", size: p.size || "", quality: p.quality || "auto", output_format: p.output_format || "png", n: p.n || 1 };
-        const token = ++activePollToken; watchedJobId = active.id; setBusy("Generating"); submit.disabled = true;
+        const token = ++activePollToken; watchedJobId = active.id; watchedJob = active; setBusy("Generating"); submit.disabled = true;
         showJobState(active, body, token); await pollJob(active.id, body, token);
       }
 
