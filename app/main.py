@@ -75,9 +75,9 @@ settings.output_dir.mkdir(parents=True, exist_ok=True)
 settings.log_dir.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="Image CLI Web Service", version="0.1.0")
-HISTORY_LIMIT = 30
+HISTORY_LIMIT = 50
 JOB_LIMIT = 100
-MAX_ACTIVE_JOBS = 5
+MAX_ACTIVE_JOBS = 10
 ACTIVE_JOB_STATUSES = {"queued", "running"}
 JOB_TASKS: dict[str, asyncio.Task] = {}
 MIN_IMAGE_DIMENSION = 16
