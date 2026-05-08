@@ -776,28 +776,6 @@
         letter-spacing: 0;
       }
       .history-actions { display: flex; align-items: center; gap: 3px; }
-      .history-tabs {
-        display: inline-flex;
-        gap: 3px;
-        padding: 3px;
-        margin-right: 6px;
-        border: 1px solid var(--border);
-        border-radius: 999px;
-        background: rgba(255, 255, 255, 0.38);
-      }
-      .history-tab {
-        min-height: 24px;
-        padding: 4px 9px;
-        border: 0;
-        border-radius: 999px;
-        background: transparent;
-        color: var(--text-dim);
-        font-size: 10px;
-        font-weight: 800;
-        cursor: default;
-        transition: all 0.12s;
-      }
-      .history-tab.active { background: var(--accent-subtle); color: var(--accent); }
       .history-count {
         font-size: 10px;
         font-family: var(--font-mono);
@@ -1315,10 +1293,6 @@
           <div class="history-header">
             <h3>History <span>last 50 records</span></h3>
             <div class="history-actions">
-              <div class="history-tabs" id="historyTabs">
-                <span class="history-tab active" data-history-mode="generate">Generate</span>
-                <span class="history-tab" data-history-mode="edit">Edit</span>
-              </div>
               <span class="history-count" id="historyCount">--</span>
               <button class="mini-btn" id="selectAllHistory" type="button" hidden>Select All</button>
               <button class="mini-btn" id="selectHistory" type="button">Select</button>
@@ -1349,6 +1323,7 @@
           <a class="mini-btn" id="modalOpen" href="#" target="_blank">Open</a>
           <a class="mini-btn" id="modalDownload" href="#" download>Download</a>
           <button class="mini-btn" id="modalEditAgain" type="button" hidden>Edit Again</button>
+          <button class="mini-btn" id="modalRetry" type="button" hidden>Retry</button>
           <button class="mini-btn" id="modalReuse" type="button">Reuse Prompt</button>
           <button class="mini-btn" id="modalCopy" type="button">Copy Prompt</button>
         </div>
@@ -1361,7 +1336,6 @@
       const historyPanel = document.querySelector("#historyPanel");
       const historyResize = document.querySelector("#historyResize");
       const history = document.querySelector("#history");
-      const historyTabs = document.querySelector("#historyTabs");
       const historyCount = document.querySelector("#historyCount");
       const selectAllHistory = document.querySelector("#selectAllHistory");
       const selectHistory = document.querySelector("#selectHistory");
@@ -1395,6 +1369,7 @@
       const modalOpen = document.querySelector("#modalOpen");
       const modalDownload = document.querySelector("#modalDownload");
       const modalEditAgain = document.querySelector("#modalEditAgain");
+      const modalRetry = document.querySelector("#modalRetry");
       const modalReuse = document.querySelector("#modalReuse");
       const modalCopy = document.querySelector("#modalCopy");
       const modalClose = document.querySelector("#modalClose");
@@ -1442,6 +1417,7 @@
       let selectedOutputFormat = "png";
       let selectedMode = "generate";
       let editSourceFiles = [];
+      let editSourceOrigin = null;
       let editPreviewUrls = [];
       const maxImagePixels = 3840 * 2160;
       function resolveSelectedSize() {
@@ -1454,11 +1430,58 @@
       function setCustomSizePreview() {
         sizePreview.textContent = `${customWidth.value || "-"}x${customHeight.value || "-"}`;
       }
+      function setActiveButton(container, selector, attr, value) {
+        container.querySelectorAll(selector).forEach(btn => {
+          btn.classList.toggle("active", btn.dataset[attr] === value);
+        });
+      }
+      function applySizeSelection(size) {
+        let matched = null;
+        for (const [ratio, resolutions] of Object.entries(resolutionSizeMap)) {
+          for (const [resolution, candidateSize] of Object.entries(resolutions)) {
+            if (candidateSize === size) matched = { ratio, resolution };
+          }
+        }
+        if (matched) {
+          selectedRatio = matched.ratio;
+          selectedResolution = matched.resolution;
+          setActiveButton(ratioGrid, ".ratio-btn", "ratio", selectedRatio);
+          setActiveButton(resolutionSeg, ".seg-btn", "value", selectedResolution);
+          customSizeRow.hidden = true;
+          resolutionField.hidden = false;
+          setSelectedSizeFromControls();
+          return;
+        }
+        const customMatch = /^(\d+)x(\d+)$/.exec(size || "");
+        if (!customMatch) return;
+        selectedRatio = "custom";
+        customWidth.value = customMatch[1];
+        customHeight.value = customMatch[2];
+        setActiveButton(ratioGrid, ".ratio-btn", "ratio", selectedRatio);
+        customSizeRow.hidden = false;
+        resolutionField.hidden = true;
+        selectedSize = size;
+        setCustomSizePreview();
+        validateCustomSize(false);
+      }
+      function applyHistoryOptions(record) {
+        setMode(record.operation === "edit" ? "edit" : "generate");
+        promptInput.value = record.prompt || "";
+        if (record.size) applySizeSelection(record.size);
+        selectedQuality = record.requested_quality || record.quality || "auto";
+        setActiveButton(qualitySeg, ".seg-btn", "value", selectedQuality);
+        selectedOutputFormat = record.output_format || "png";
+        setActiveButton(outputFormatSeg, ".seg-btn", "value", selectedOutputFormat);
+        form.querySelector('[name="n"]').value = String(record.n || 1);
+      }
       function operationLabel(operation) {
         return operation === "edit" ? "Edit" : "Generate";
       }
       function busyLabel(operation) {
         return operation === "edit" ? "Editing" : "Generating";
+      }
+      function isFailedRecord(record) {
+        return record?.status === "failed";
       }
       function setMode(mode) {
         selectedMode = mode === "edit" ? "edit" : "generate";
@@ -1484,6 +1507,7 @@
         editImageInput.files = transfer.files;
       }
       function appendEditSourceFiles(files) {
+        if (files.length) editSourceOrigin = null;
         for (const file of files) {
           const duplicate = editSourceFiles.some(item =>
             item.name === file.name && item.size === file.size && item.lastModified === file.lastModified
@@ -1495,11 +1519,13 @@
       }
       function removeEditSourceFile(index) {
         editSourceFiles.splice(index, 1);
+        editSourceOrigin = null;
         syncEditImageInput();
         renderEditPreviews();
       }
       function clearEditInputs() {
         editSourceFiles = [];
+        editSourceOrigin = null;
         syncEditImageInput();
         editImageInput.value = "";
         editMaskInput.value = "";
@@ -1533,8 +1559,9 @@
         editSourceFiles.forEach((file, index) => addEditPreview(file, `image ${index + 1}`, index));
         if (editMaskInput.files[0]) addEditPreview(editMaskInput.files[0], "mask");
       }
-      function setEditSourceFile(file) {
+      function setEditSourceFile(file, origin = null) {
         editSourceFiles = [file];
+        editSourceOrigin = origin;
         syncEditImageInput();
         editMaskInput.value = "";
         renderEditPreviews();
@@ -1720,26 +1747,30 @@
           return src.split("/").pop() || fallback;
         }
       }
+      async function loadImageUrlAsFile(src, fallback = "history-image.png") {
+        if (!src) throw new Error("This history item has no image file to edit.");
+        const imageRes = await fetch(src);
+        if (!imageRes.ok) throw new Error(`Image load failed: HTTP ${imageRes.status}`);
+        const blob = await imageRes.blob();
+        return new File([blob], filenameFromSource(src, fallback), { type: blob.type || "image/png" });
+      }
       async function loadHistoryImageAsFile(record) {
         const detailRes = await fetch(`/v1/history/${record.id}`);
         if (!detailRes.ok) throw new Error(`History detail failed: HTTP ${detailRes.status}`);
         const detail = await detailRes.json();
         const src = detail.file || detail.url;
-        if (!src) throw new Error("This history item has no image file to edit.");
-        const imageRes = await fetch(src);
-        if (!imageRes.ok) throw new Error(`Image load failed: HTTP ${imageRes.status}`);
-        const blob = await imageRes.blob();
         return {
           detail,
-          file: new File([blob], filenameFromSource(src), { type: blob.type || "image/png" }),
+          source: src,
+          file: await loadImageUrlAsFile(src),
         };
       }
       async function startEditFromHistory(record) {
         if (submit.disabled) return;
         try {
-          const { detail, file } = await loadHistoryImageAsFile(record);
+          const { detail, file, source } = await loadHistoryImageAsFile(record);
           setMode("edit");
-          setEditSourceFile(file);
+          setEditSourceFile(file, { source_file: source, source_history_id: detail.id || record.id || "" });
           promptInput.value = "";
           promptInput.focus();
           result.replaceChildren(Object.assign(document.createElement("div"), {
@@ -1755,6 +1786,51 @@
             textContent: `Could not load this history image for editing:\n${err.message}`
           }));
         }
+      }
+      async function retryHistoryRecord(record) {
+        if (submit.disabled || !record) return;
+        applyHistoryOptions(record);
+        closeModal();
+        if (record.operation === "edit") clearEditInputs();
+        if (record.operation === "edit" && !editSourceFiles.length) {
+          if (record.source_file) {
+            try {
+              const file = await loadImageUrlAsFile(record.source_file, "edit-source.png");
+              setEditSourceFile(file, {
+                source_file: record.source_file,
+                source_history_id: record.source_history_id || "",
+              });
+              result.replaceChildren(Object.assign(document.createElement("div"), {
+                className: "empty-state",
+                innerHTML: `<div><strong>Ready to retry this edit.</strong><div style="margin-top:6px;color:var(--text-muted);font-size:12px;">Prompt, options, and the original generated source image have been restored. Review them, then submit when ready.</div></div>`
+              }));
+              promptInput.focus();
+              setStatus("Edit restored", "live");
+              return;
+            } catch (err) {
+              result.replaceChildren(Object.assign(document.createElement("div"), {
+                className: "error-box",
+                textContent: `Could not restore the original edit source image:\n${err.message}\n\nUpload the source image manually, then run Edit Image.`
+              }));
+              editImageInput.focus();
+              setStatus("Edit source needed", "live");
+              return;
+            }
+          }
+          result.replaceChildren(Object.assign(document.createElement("div"), {
+            className: "empty-state",
+            innerHTML: `<div><strong>Ready to retry this edit.</strong><div style="margin-top:6px;color:var(--text-muted);font-size:12px;">The failed history does not keep uploaded source images. Upload the source image again, then run Edit Image.</div></div>`
+          }));
+          editImageInput.focus();
+          setStatus("Edit source needed", "live");
+          return;
+        }
+        result.replaceChildren(Object.assign(document.createElement("div"), {
+          className: "empty-state",
+          innerHTML: `<div><strong>Ready to retry this ${operationLabel(record.operation).toLowerCase()}.</strong><div style="margin-top:6px;color:var(--text-muted);font-size:12px;">Prompt and options have been restored. Review them, then submit when ready.</div></div>`
+        }));
+        promptInput.focus();
+        setStatus(`${operationLabel(record.operation)} restored`, "live");
       }
 
       function clampHistoryH(h) {
@@ -1798,18 +1874,34 @@
         openBtn.className = "mini-btn"; openBtn.href = src; openBtn.target = "_blank"; openBtn.textContent = "Open";
         const dlBtn = document.createElement("a");
         dlBtn.className = "mini-btn"; dlBtn.href = src; dlBtn.download = src.split("/").pop() || "image.png"; dlBtn.textContent = "Save";
-        actions.append(openBtn, dlBtn);
+        const closeBtn = document.createElement("button");
+        closeBtn.className = "mini-btn";
+        closeBtn.type = "button";
+        closeBtn.textContent = "Close";
+        closeBtn.addEventListener("click", closeJobResult);
+        actions.append(openBtn, dlBtn, closeBtn);
         footer.append(metaEl, actions);
         card.append(img, footer);
         card.style.animationDelay = `${Math.random() * 0.12}s`;
         return card;
       }
 
+      async function closeJobResult() {
+        activePollToken++;
+        watchedJobId = null;
+        watchedJob = null;
+        submit.disabled = false;
+        result.replaceChildren(Object.assign(document.createElement("div"), {
+          className: "empty-state",
+          innerHTML: `<div><strong>Ready for the next run.</strong><div style="margin-top:6px;color:var(--text-muted);font-size:12px;">History has been refreshed.</div></div>`
+        }));
+        await loadHistory();
+        await refreshBgJobs();
+        refreshIdleStatus();
+      }
+
       function setHistoryMode(mode) {
         selectedHistoryMode = mode === "edit" ? "edit" : "generate";
-        historyTabs.querySelectorAll(".history-tab").forEach(tab => {
-          tab.classList.toggle("active", tab.dataset.historyMode === selectedHistoryMode);
-        });
         selectedHistoryIds.clear();
         selectingHistory = false;
         renderHistory(allHistoryRecords);
@@ -1834,11 +1926,15 @@
         info.append(prompt, detail);
         const actions = document.createElement("div"); actions.className = "history-row-actions";
         const view = document.createElement("button"); view.className = "history-view"; view.type = "button"; view.textContent = "View";
-        const edit = document.createElement("button"); edit.className = "history-edit"; edit.type = "button"; edit.textContent = "Edit";
-        edit.title = record.operation === "edit" ? "Edit this result again" : "Use this image as the edit source";
+        const edit = document.createElement("button"); edit.className = "history-edit"; edit.type = "button";
+        edit.textContent = isFailedRecord(record) ? "Retry" : "Edit";
+        edit.title = isFailedRecord(record)
+          ? `Retry this failed ${operationLabel(record.operation).toLowerCase()}`
+          : record.operation === "edit" ? "Edit this result again" : "Use this image as the edit source";
         edit.addEventListener("click", async e => {
           e.stopPropagation();
-          await startEditFromHistory(record);
+          if (isFailedRecord(record)) await retryHistoryRecord(record);
+          else await startEditFromHistory(record);
         });
         const del = document.createElement("button"); del.className = "history-delete"; del.type = "button"; del.textContent = "\u00d7";
         del.title = "Delete";
@@ -1943,9 +2039,12 @@
           modalPrompt.textContent = record.prompt || "No prompt";
           modalOpen.removeAttribute("href");
           modalDownload.removeAttribute("href");
+          modalOpen.hidden = true;
+          modalDownload.hidden = true;
           modalEditAgain.hidden = true;
-          modalReuse.hidden = true;
-          modalCopy.hidden = true;
+          modalRetry.hidden = false;
+          modalReuse.hidden = false;
+          modalCopy.hidden = false;
           return;
         }
         modalImage.hidden = false;
@@ -1955,6 +2054,9 @@
         modalMeta.textContent = [formatOperation(record.operation), formatSize(record.size), formatImageSpec(record), formatFileSize(record.file_size_bytes), formatQuality(record), formatOutputFormat(record.output_format), formatDate(record.created_at), formatStatus(record.status)].filter(Boolean).join(" \u00b7 ");
         modalPrompt.textContent = record.prompt || "No prompt";
         modalOpen.href = src; modalDownload.href = src; modalDownload.download = src.split("/").pop() || "image.png";
+        modalOpen.hidden = false;
+        modalDownload.hidden = false;
+        modalRetry.hidden = true;
         const isEditHistory = record.operation === "edit";
         modalEditAgain.hidden = !isEditHistory;
         modalReuse.hidden = isEditHistory;
@@ -1967,6 +2069,9 @@
         modalFailure.hidden = true;
         modalFailure.textContent = "";
         modalEditAgain.hidden = true;
+        modalRetry.hidden = true;
+        modalOpen.hidden = false;
+        modalDownload.hidden = false;
         modalReuse.hidden = false;
         modalCopy.hidden = false;
         activeHistoryRecord = null;
@@ -1977,6 +2082,10 @@
       modalEditAgain.addEventListener("click", async () => {
         if (!activeHistoryRecord) return;
         await startEditFromHistory(activeHistoryRecord);
+      });
+      modalRetry.addEventListener("click", async () => {
+        if (!activeHistoryRecord) return;
+        await retryHistoryRecord(activeHistoryRecord);
       });
       modalCopy.addEventListener("click", async () => {
         if (!activeHistoryRecord) return;
@@ -2026,7 +2135,14 @@
           const active = (data.jobs || []).filter(isActiveJob);
           const activeIds = new Set(active.map(j => j.id));
           for (const id of [...backgroundJobs.keys()]) {
-            if (!activeIds.has(id)) { backgroundJobs.delete(id); const fj = (data.jobs || []).find(j => j.id === id); if (fj) await showBgFinal(fj); }
+            if (!activeIds.has(id)) {
+              backgroundJobs.delete(id);
+              const fj = (data.jobs || []).find(j => j.id === id);
+              if (fj) {
+                await loadHistory();
+                await showBgFinal(fj);
+              }
+            }
           }
           active.forEach(j => { if (j.id !== watchedJobId) backgroundJobs.set(j.id, j); });
           renderJobsPopover();
@@ -2055,9 +2171,26 @@
         notice.innerHTML = `<div style="display:grid;gap:6px;justify-items:center;"><div style="font-size:13px;color:var(--text-secondary);">Job moved to background</div><div style="font-size:10px;color:var(--text-muted);font-family:var(--font-mono);">${job.id}</div><div style="font-size:11px;color:var(--text-muted);">You can submit new prompts. History will refresh when done.</div></div>`;
         result.replaceChildren(notice);
       }
+      function createJobFailureCard(job, body) {
+        const box = document.createElement("div");
+        box.className = "error-box";
+        const detail = document.createElement("div");
+        detail.textContent = `${operationLabel(body?.operation || job.operation)} failed (${job.status_code || 500}):\n${JSON.stringify(job.error || job, null, 2)}`;
+        const actions = document.createElement("div");
+        actions.className = "inline-actions";
+        const closeBtn = document.createElement("button");
+        closeBtn.className = "mini-btn";
+        closeBtn.type = "button";
+        closeBtn.textContent = "Close";
+        closeBtn.addEventListener("click", closeJobResult);
+        actions.append(closeBtn);
+        box.append(detail, actions);
+        return box;
+      }
       async function showBgFinal(job) {
         const cur = result.querySelector("[data-background-job-id]");
         if (cur?.dataset.backgroundJobId !== job.id) return false;
+        await loadHistory();
         if (job.status === "succeeded") {
           const body = bodyFromJob(job), data = job.result;
           const meta = { operation: body.operation, prompt: body.prompt, size: body.size, quality: data?.provider_response?.quality || body.quality, output_format: data?.provider_response?.output_format || body.output_format };
@@ -2067,7 +2200,7 @@
         }
         if (job.status === "failed") {
           stopBusy("Failed");
-          result.replaceChildren(Object.assign(document.createElement("div"), { className: "error-box", textContent: `Job failed (${job.status_code || 500}):\n${JSON.stringify(job.error || job, null, 2)}` }));
+          result.replaceChildren(createJobFailureCard(job, bodyFromJob(job)));
           return true;
         }
         if (job.status === "cancelled") { stopBusy("Cancelled"); return true; }
@@ -2151,7 +2284,8 @@
           }
           if (job.status === "failed") {
             stopBusy("Failed");
-            result.replaceChildren(Object.assign(document.createElement("div"), { className: "error-box", textContent: `${operationLabel(body.operation)} failed (${job.status_code || 500}):\n${JSON.stringify(job.error || job, null, 2)}` }));
+            await loadHistory();
+            result.replaceChildren(createJobFailureCard(job, body));
             return;
           }
           const data = job.result;
@@ -2193,6 +2327,8 @@
             formData.append("output_format", body.output_format);
             formData.append("n", String(body.n));
             formData.append("response_format", "b64_json");
+            if (editSourceOrigin?.source_file) formData.append("source_file", editSourceOrigin.source_file);
+            if (editSourceOrigin?.source_history_id) formData.append("source_history_id", editSourceOrigin.source_history_id);
             res = await fetch("/v1/edit/jobs", { method: "POST", body: formData });
           } else {
             res = await fetch("/v1/jobs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
@@ -2215,14 +2351,16 @@
       async function resumeActiveJob() {
         const res = await fetch("/v1/jobs"); if (!res.ok) return;
         const data = await res.json();
-        (data.jobs || []).filter(isActiveJob).forEach(j => backgroundJobs.set(j.id, j));
-        const active = (data.jobs || []).find(j => j.status === "queued" || j.status === "running");
-        if (!active) { renderJobsPopover(); return; }
-        backgroundJobs.delete(active.id); renderJobsPopover();
-        const p = active.payload || {};
-        const body = { operation: active.operation || "generate", prompt: active.prompt || p.prompt || "", size: p.size || "", quality: p.quality || "auto", output_format: p.output_format || "png", n: p.n || 1 };
-        const token = ++activePollToken; watchedJobId = active.id; watchedJob = active; setBusy(busyLabel(active.operation)); submit.disabled = true;
-        showJobState(active, body, token); await pollJob(active.id, body, token);
+        const activeJobs = (data.jobs || []).filter(isActiveJob);
+        activeJobs.forEach(job => {
+          backgroundJobs.set(job.id, job);
+          pollBgJob(job.id);
+        });
+        watchedJobId = null;
+        watchedJob = null;
+        submit.disabled = false;
+        renderJobsPopover();
+        refreshIdleStatus();
       }
 
       setMode(localStorage.getItem(modeStorageKey) || "generate");

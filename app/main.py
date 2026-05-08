@@ -703,6 +703,8 @@ def _history_public(record: dict[str, Any]) -> dict[str, Any]:
         "output_format": record.get("output_format", ""),
         "model": record.get("model", ""),
         "operation": record.get("operation", "generate"),
+        "source_file": record.get("source_file"),
+        "source_history_id": record.get("source_history_id"),
         "status": record.get("status", "succeeded"),
         "error": record.get("error"),
         "status_code": record.get("status_code"),
@@ -1358,6 +1360,7 @@ def _save_failure_to_history(
     status_code: int,
 ) -> None:
     payload = dict(job.get("payload") or {})
+    edit_inputs = job.get("edit_inputs") if isinstance(job.get("edit_inputs"), dict) else {}
     now = int(time.time())
     _append_history(
         [
@@ -1371,6 +1374,8 @@ def _save_failure_to_history(
                 "output_format": payload.get("output_format", ""),
                 "model": payload.get("model", settings.model),
                 "operation": job.get("operation") or "generate",
+                "source_file": edit_inputs.get("source_file"),
+                "source_history_id": edit_inputs.get("source_history_id"),
                 "status": "failed",
                 "error": _redact_large_payloads(error),
                 "status_code": status_code,
@@ -2028,6 +2033,8 @@ async def create_edit_job(
     n: int = Form(default=1),
     response_format: str | None = Form(default=None),
     extra: str | None = Form(default=None),
+    source_file: str | None = Form(default=None),
+    source_history_id: str | None = Form(default=None),
 ) -> dict[str, Any]:
     _require_auth(http_request)
     source_images, mask_image = await _read_edit_uploads(image, mask)
@@ -2062,6 +2069,8 @@ async def create_edit_job(
             "edit_inputs": {
                 "source_files": source_files,
                 "mask_file": mask_file,
+                "source_file": source_file if source_file and source_file.startswith("/files/") else None,
+                "source_history_id": source_history_id or None,
             },
             "created_at": now,
             "updated_at": now,
