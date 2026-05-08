@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Admin Settings — Image CLI</title>
+    <style>
+      :root {
+        --bg: #f4f1ea;
+        --card: rgba(255, 255, 255, 0.82);
+        --ink: #1f2823;
+        --muted: #738077;
+        --line: rgba(64, 82, 70, 0.16);
+        --accent: #1f7a53;
+        --accent-soft: rgba(31, 122, 83, 0.12);
+        --danger: #b42318;
+        --warn: #946200;
+        --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+        --body: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--ink);
+        font-family: var(--body);
+        background:
+          radial-gradient(circle at 18% 10%, rgba(205, 171, 99, 0.22), transparent 30%),
+          radial-gradient(circle at 88% 18%, rgba(31, 122, 83, 0.16), transparent 34%),
+          linear-gradient(135deg, #f8f4eb 0%, #edf2ec 100%);
+      }
+      .shell { width: min(1180px, calc(100vw - 32px)); margin: 0 auto; padding: 30px 0 46px; }
+      .top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 20px;
+      }
+      h1 { margin: 0; font-size: clamp(26px, 4vw, 44px); letter-spacing: -0.06em; }
+      .sub { margin-top: 6px; color: var(--muted); font-size: 14px; }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 26px;
+        box-shadow: 0 24px 80px rgba(34, 45, 38, 0.12);
+        backdrop-filter: blur(16px);
+      }
+      .login {
+        width: min(460px, 100%);
+        margin: 80px auto 0;
+        padding: 28px;
+        display: grid;
+        gap: 16px;
+      }
+      .panel { padding: 22px; display: grid; gap: 18px; }
+      .toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding-bottom: 16px;
+        border-bottom: 1px solid var(--line);
+      }
+      .env-path { color: var(--muted); font-family: var(--mono); font-size: 12px; word-break: break-all; }
+      .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+      .field { display: grid; gap: 7px; }
+      .field.wide { grid-column: 1 / -1; }
+      label {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      input, select {
+        width: 100%;
+        min-height: 42px;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.72);
+        color: var(--ink);
+        font: 14px var(--body);
+        outline: none;
+      }
+      input:focus, select:focus {
+        border-color: rgba(31, 122, 83, 0.44);
+        box-shadow: 0 0 0 4px var(--accent-soft);
+      }
+      .hint { color: var(--muted); font-size: 12px; line-height: 1.5; }
+      .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
+      button, .link {
+        min-height: 40px;
+        padding: 10px 15px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: #fff;
+        color: var(--ink);
+        font-weight: 800;
+        cursor: pointer;
+        text-decoration: none;
+      }
+      button.primary { background: var(--accent); color: #fff; border-color: transparent; }
+      button.danger { color: var(--danger); border-color: rgba(180, 35, 24, 0.26); }
+      button:disabled { opacity: 0.55; cursor: wait; }
+      .status {
+        min-height: 22px;
+        color: var(--muted);
+        font-size: 13px;
+        white-space: pre-wrap;
+      }
+      .status.error { color: var(--danger); }
+      .status.ok { color: var(--accent); }
+      .notice {
+        padding: 12px 14px;
+        border: 1px solid rgba(148, 98, 0, 0.2);
+        border-radius: 16px;
+        background: rgba(148, 98, 0, 0.08);
+        color: var(--warn);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .provider-list { display: grid; gap: 12px; }
+      .provider-card {
+        display: grid;
+        gap: 12px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.48);
+      }
+      .provider-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+      .provider-title { font-weight: 900; }
+      textarea {
+        width: 100%;
+        min-height: 74px;
+        resize: vertical;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.72);
+        color: var(--ink);
+        font: 14px var(--body);
+        outline: none;
+      }
+      textarea:focus {
+        border-color: rgba(31, 122, 83, 0.44);
+        box-shadow: 0 0 0 4px var(--accent-soft);
+      }
+      [hidden] { display: none !important; }
+      @media (max-width: 760px) {
+        .grid { grid-template-columns: 1fr; }
+        .top, .toolbar { align-items: flex-start; flex-direction: column; }
+        .actions { justify-content: flex-start; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <div class="top">
+        <div>
+          <h1>Admin Settings</h1>
+          <div class="sub">Edit runtime defaults, save them to .env, then restart the service when ready.</div>
+        </div>
+        <a class="link" href="/">Back to Studio</a>
+      </div>
+
+      <form class="card login" id="gate">
+        <div>
+          <h2 style="margin:0 0 6px;">Admin unlock</h2>
+          <div class="hint">需要再次输入管理密码。默认读取 <code>ADMIN_PASSWORD</code>，未设置时回退到 <code>APP_PASSWORD</code>。</div>
+        </div>
+        <div class="field">
+          <label for="adminPassword">Admin Password</label>
+          <input id="adminPassword" type="password" autocomplete="current-password" required autofocus />
+        </div>
+        <button class="primary" type="submit">Unlock</button>
+        <div class="status error" id="gateStatus"></div>
+      </form>
+
+      <section class="card panel" id="adminPanel" hidden>
+        <div class="toolbar">
+          <div>
+            <strong>Environment Configuration</strong>
+            <div class="env-path" id="envPath">.env</div>
+          </div>
+          <div class="actions">
+            <button type="button" id="reloadConfig">Reload</button>
+            <button class="primary" type="button" id="saveConfig">Save Config</button>
+            <button class="danger" type="button" id="restartService">Restart Service</button>
+          </div>
+        </div>
+        <div class="notice">保存配置只会写入 .env；大多数配置需要点击 Restart Service 后才会在后端生效。直接用命令行运行 uvicorn 时，重启按钮会提示手动重启。</div>
+        <div class="provider-list" id="providerList"></div>
+        <div class="actions" style="justify-content:flex-start;">
+          <button type="button" id="addProvider">Add Provider</button>
+        </div>
+        <form class="grid" id="configForm"></form>
+        <div class="status" id="status"></div>
+      </section>
+    </main>
+
+    <script>
+      const fields = [
+        { key: "OPENAI_API_KEY", label: "Provider API Key", type: "password", wide: true, hint: "留空表示保持当前值不变。" },
+        { key: "OPENAI_BASE_URL", label: "Provider Base URL", type: "url", wide: true },
+        { key: "IMAGE_MODEL", label: "Image Model", type: "text" },
+        { key: "IMAGE_SIZE", label: "Default Size", type: "select", options: ["1024x1024", "768x1024", "1024x768", "576x1024", "1024x576", "2048x2048", "2048x1152", "3840x2160"] },
+        { key: "IMAGE_QUALITY", label: "Default Quality", type: "select", options: ["auto", "high", "medium", "low"] },
+        { key: "IMAGE_OUTPUT_FORMAT", label: "Output Format", type: "select", options: ["png", "jpeg", "webp"] },
+        { key: "IMAGE_RESPONSE_FORMAT", label: "Response Format", type: "select", options: ["b64_json", "url"] },
+        { key: "IMAGE_EDIT_IMAGE_FIELD", label: "Edit Image Field", type: "select", options: ["image[]", "image"] },
+        { key: "REQUEST_TIMEOUT_SECONDS", label: "Request Timeout Seconds", type: "number" },
+        { key: "PROVIDER_MAX_ATTEMPTS", label: "Provider Max Attempts", type: "number" },
+        { key: "HISTORY_LIMIT", label: "History Retention Count", type: "number", hint: "历史记录最多保留数量，保存后重启生效。" },
+        { key: "MAX_ACTIVE_JOBS", label: "Max Active Jobs", type: "number", hint: "同时 queued/running 的最大 Job 数，保存后重启生效。" },
+        { key: "OUTPUT_DIR", label: "Output Dir", type: "text" },
+        { key: "LOG_DIR", label: "Log Dir", type: "text" },
+        { key: "APP_PASSWORD", label: "App Password", type: "password", hint: "留空表示保持当前值不变。" },
+        { key: "ADMIN_PASSWORD", label: "Admin Password", type: "password", hint: "留空表示保持当前值不变。" },
+        { key: "APP_SESSION_SECRET", label: "Session Secret", type: "password", wide: true, hint: "留空表示保持当前值不变。" },
+        { key: "SYSTEMD_UNIT", label: "Systemd Unit", type: "text" },
+      ];
+
+      const gate = document.querySelector("#gate");
+      const gateStatus = document.querySelector("#gateStatus");
+      const adminPanel = document.querySelector("#adminPanel");
+      const configForm = document.querySelector("#configForm");
+      const providerList = document.querySelector("#providerList");
+      const addProvider = document.querySelector("#addProvider");
+      const statusEl = document.querySelector("#status");
+      const envPath = document.querySelector("#envPath");
+      const reloadConfig = document.querySelector("#reloadConfig");
+      const saveConfig = document.querySelector("#saveConfig");
+      const restartService = document.querySelector("#restartService");
+      let adminPassword = sessionStorage.getItem("imageCliAdminPassword") || "";
+      let providers = [];
+
+      function setStatus(message, kind = "") {
+        statusEl.textContent = message;
+        statusEl.className = `status ${kind}`;
+      }
+      function adminHeaders() {
+        return { "Content-Type": "application/json", "X-Admin-Password": adminPassword };
+      }
+      function fieldNode(def, config) {
+        const wrap = document.createElement("div");
+        wrap.className = `field${def.wide ? " wide" : ""}`;
+        const label = document.createElement("label");
+        label.htmlFor = def.key;
+        label.textContent = def.label;
+        let input;
+        if (def.type === "select") {
+          input = document.createElement("select");
+          for (const option of def.options) {
+            input.append(Object.assign(document.createElement("option"), { value: option, textContent: option }));
+          }
+        } else {
+          input = document.createElement("input");
+          input.type = def.type;
+          if (def.type === "number") input.min = "1";
+        }
+        input.id = def.key;
+        input.name = def.key;
+        input.dataset.secret = config?.secret ? "1" : "";
+        if (config?.secret) {
+          input.placeholder = config.configured ? "Configured. Leave blank to keep." : "Not configured";
+        } else {
+          input.value = config?.value || "";
+        }
+        wrap.append(label, input);
+        if (def.hint) wrap.append(Object.assign(document.createElement("div"), { className: "hint", textContent: def.hint }));
+        return wrap;
+      }
+      function providerNode(provider, index) {
+        const card = document.createElement("div");
+        card.className = "provider-card";
+        card.dataset.index = String(index);
+        card.innerHTML = `
+          <div class="provider-head">
+            <div class="provider-title">Provider ${index + 1}</div>
+            <button type="button" data-provider-remove="${index}">Remove</button>
+          </div>
+          <div class="grid">
+            <div class="field">
+              <label>ID</label>
+              <input name="id" value="${escapeHtml(provider.id || "")}" placeholder="provider id, e.g. openai" />
+            </div>
+            <div class="field">
+              <label>Name</label>
+              <input name="name" value="${escapeHtml(provider.name || "")}" placeholder="Display name" />
+            </div>
+            <div class="field wide">
+              <label>Base URL</label>
+              <input name="base_url" value="${escapeHtml(provider.base_url || "")}" placeholder="https://example.com/v1" />
+            </div>
+            <div class="field wide">
+              <label>API Key</label>
+              <input name="api_key" type="password" placeholder="${provider.api_key_configured ? "Configured. Leave blank to keep." : "Provider API key"}" />
+            </div>
+            <div class="field wide">
+              <label>Remark / Tooltip</label>
+              <textarea name="note" placeholder="Shown on homepage hover">${escapeHtml(provider.note || "")}</textarea>
+            </div>
+          </div>
+        `;
+        card.querySelector(`[data-provider-remove="${index}"]`).addEventListener("click", () => {
+          providers.splice(index, 1);
+          renderProviders();
+        });
+        return card;
+      }
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, char => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        }[char]));
+      }
+      function renderProviders() {
+        providerList.replaceChildren(...providers.map((provider, index) => providerNode(provider, index)));
+      }
+      function collectProviders() {
+        return [...providerList.querySelectorAll(".provider-card")].map(card => ({
+          id: card.querySelector('[name="id"]').value,
+          name: card.querySelector('[name="name"]').value,
+          base_url: card.querySelector('[name="base_url"]').value,
+          api_key: card.querySelector('[name="api_key"]').value,
+          note: card.querySelector('[name="note"]').value,
+        }));
+      }
+      async function loadConfig() {
+        setStatus("Loading...");
+        const res = await fetch("/v1/admin/config", { headers: { "X-Admin-Password": adminPassword } });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+        envPath.textContent = data.env_file || ".env";
+        providers = data.providers || [];
+        renderProviders();
+        configForm.replaceChildren(...fields.map(def => fieldNode(def, data.config?.[def.key] || {})));
+        setStatus("Loaded", "ok");
+      }
+      addProvider.addEventListener("click", () => {
+        providers.push({ id: `provider-${providers.length + 1}`, name: `Provider ${providers.length + 1}`, base_url: "", note: "", api_key_configured: false });
+        renderProviders();
+      });
+      function collectConfig() {
+        const payload = {};
+        for (const def of fields) {
+          const input = configForm.elements[def.key];
+          if (!input) continue;
+          if (input.dataset.secret && !input.value) continue;
+          payload[def.key] = input.value;
+        }
+        return payload;
+      }
+
+      gate.addEventListener("submit", async event => {
+        event.preventDefault();
+        gateStatus.textContent = "";
+        adminPassword = document.querySelector("#adminPassword").value;
+        try {
+          await loadConfig();
+          sessionStorage.setItem("imageCliAdminPassword", adminPassword);
+          gate.hidden = true;
+          adminPanel.hidden = false;
+        } catch (error) {
+          gateStatus.textContent = error.message;
+        }
+      });
+      reloadConfig.addEventListener("click", async () => {
+        try { await loadConfig(); } catch (error) { setStatus(error.message, "error"); }
+      });
+      saveConfig.addEventListener("click", async () => {
+        saveConfig.disabled = true;
+        try {
+          const res = await fetch("/v1/admin/config", {
+            method: "POST",
+            headers: adminHeaders(),
+            body: JSON.stringify({ config: collectConfig(), providers: collectProviders() }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+          await loadConfig();
+          setStatus(`Saved ${data.updated?.length || 0} setting(s). Restart service to apply.`, "ok");
+        } catch (error) {
+          setStatus(error.message, "error");
+        } finally {
+          saveConfig.disabled = false;
+        }
+      });
+      restartService.addEventListener("click", async () => {
+        if (!confirm("Restart the backend service now?")) return;
+        restartService.disabled = true;
+        try {
+          const res = await fetch("/v1/admin/restart", { method: "POST", headers: adminHeaders(), body: "{}" });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+          setStatus(data.message || "Restart command issued", "ok");
+        } catch (error) {
+          setStatus(error.message, "error");
+        } finally {
+          restartService.disabled = false;
+        }
+      });
+
+      if (adminPassword) {
+        document.querySelector("#adminPassword").value = adminPassword;
+      }
+    </script>
+  </body>
+</html>

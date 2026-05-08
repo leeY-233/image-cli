@@ -7,6 +7,7 @@ import hmac
 import json
 import logging
 import os
+import subprocess
 import shutil
 import tempfile
 import time
@@ -18,7 +19,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 import httpx
-from dotenv import load_dotenv
+from dotenv import dotenv_values, load_dotenv
 from starlette.background import BackgroundTask
 from fastapi import FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import (
@@ -34,38 +35,62 @@ from pydantic import BaseModel, Field
 load_dotenv()
 
 
+def _env_int(name: str, default: int, minimum: int = 1) -> int:
+    value = os.getenv(name, "")
+    if str(value).strip() == "":
+        return default
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return max(minimum, parsed)
+
+
+def _env_str(name: str, default: str) -> str:
+    value = os.getenv(name, "")
+    return str(value).strip() or default
+
+
 class Settings(BaseModel):
     api_key: str = Field(default_factory=lambda: os.getenv("OPENAI_API_KEY", ""))
     base_url: str = Field(
-        default_factory=lambda: os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+        default_factory=lambda: _env_str("OPENAI_BASE_URL", "https://api.openai.com/v1")
     )
-    model: str = Field(default_factory=lambda: os.getenv("IMAGE_MODEL", "gpt-image-2"))
-    image_size: str = Field(default_factory=lambda: os.getenv("IMAGE_SIZE", "1024x1024"))
-    image_quality: str = Field(default_factory=lambda: os.getenv("IMAGE_QUALITY", "auto"))
+    model: str = Field(default_factory=lambda: _env_str("IMAGE_MODEL", "gpt-image-2"))
+    image_size: str = Field(default_factory=lambda: _env_str("IMAGE_SIZE", "1024x1024"))
+    image_quality: str = Field(default_factory=lambda: _env_str("IMAGE_QUALITY", "auto"))
     image_output_format: str = Field(
-        default_factory=lambda: os.getenv("IMAGE_OUTPUT_FORMAT", "png")
+        default_factory=lambda: _env_str("IMAGE_OUTPUT_FORMAT", "png")
     )
     response_format: str = Field(
-        default_factory=lambda: os.getenv("IMAGE_RESPONSE_FORMAT", "b64_json")
+        default_factory=lambda: _env_str("IMAGE_RESPONSE_FORMAT", "b64_json")
     )
     edit_image_field: str = Field(
-        default_factory=lambda: os.getenv("IMAGE_EDIT_IMAGE_FIELD", "image[]")
+        default_factory=lambda: _env_str("IMAGE_EDIT_IMAGE_FIELD", "image[]")
     )
+    image_providers: str = Field(default_factory=lambda: os.getenv("IMAGE_PROVIDERS", ""))
     output_dir: Path = Field(
-        default_factory=lambda: Path(os.getenv("OUTPUT_DIR", "outputs"))
+        default_factory=lambda: Path(_env_str("OUTPUT_DIR", "outputs"))
     )
-    log_dir: Path = Field(default_factory=lambda: Path(os.getenv("LOG_DIR", "logs")))
+    log_dir: Path = Field(default_factory=lambda: Path(_env_str("LOG_DIR", "logs")))
     timeout_seconds: float = Field(
-        default_factory=lambda: float(os.getenv("REQUEST_TIMEOUT_SECONDS", "180"))
+        default_factory=lambda: float(os.getenv("REQUEST_TIMEOUT_SECONDS") or "180")
     )
     provider_max_attempts: int = Field(
-        default_factory=lambda: max(1, int(os.getenv("PROVIDER_MAX_ATTEMPTS", "2")))
+        default_factory=lambda: _env_int("PROVIDER_MAX_ATTEMPTS", 2)
+    )
+    history_limit: int = Field(
+        default_factory=lambda: _env_int("HISTORY_LIMIT", 50)
+    )
+    max_active_jobs: int = Field(
+        default_factory=lambda: _env_int("MAX_ACTIVE_JOBS", 10)
     )
     app_password: str = Field(default_factory=lambda: os.getenv("APP_PASSWORD", ""))
+    admin_password: str = Field(default_factory=lambda: os.getenv("ADMIN_PASSWORD", ""))
     session_secret: str = Field(
         default_factory=lambda: os.getenv("APP_SESSION_SECRET", "")
     )
-    systemd_unit: str = Field(default_factory=lambda: os.getenv("SYSTEMD_UNIT", "image-cli"))
+    systemd_unit: str = Field(default_factory=lambda: _env_str("SYSTEMD_UNIT", "image-cli"))
     session_max_age_seconds: int = 60 * 60 * 24 * 7
 
     @property
@@ -82,9 +107,9 @@ settings.output_dir.mkdir(parents=True, exist_ok=True)
 settings.log_dir.mkdir(parents=True, exist_ok=True)
 
 app = FastAPI(title="Image CLI Web Service", version="0.1.0")
-HISTORY_LIMIT = 50
+HISTORY_LIMIT = settings.history_limit
 JOB_LIMIT = 100
-MAX_ACTIVE_JOBS = 10
+MAX_ACTIVE_JOBS = settings.max_active_jobs
 ACTIVE_JOB_STATUSES = {"queued", "running"}
 JOB_TASKS: dict[str, asyncio.Task] = {}
 MIN_IMAGE_DIMENSION = 16
@@ -93,6 +118,34 @@ MAX_IMAGE_PIXELS = 3840 * 2160
 MAX_EDIT_UPLOAD_BYTES = 50 * 1024 * 1024
 MAX_EDIT_SOURCE_IMAGES = 16
 SUPPORTED_EDIT_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp"}
+ENV_CONFIG_KEYS = {
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "IMAGE_MODEL",
+    "IMAGE_SIZE",
+    "IMAGE_QUALITY",
+    "IMAGE_OUTPUT_FORMAT",
+    "IMAGE_RESPONSE_FORMAT",
+    "IMAGE_EDIT_IMAGE_FIELD",
+    "IMAGE_PROVIDERS",
+    "OUTPUT_DIR",
+    "LOG_DIR",
+    "REQUEST_TIMEOUT_SECONDS",
+    "PROVIDER_MAX_ATTEMPTS",
+    "HISTORY_LIMIT",
+    "MAX_ACTIVE_JOBS",
+    "APP_PASSWORD",
+    "ADMIN_PASSWORD",
+    "APP_SESSION_SECRET",
+    "SYSTEMD_UNIT",
+}
+SECRET_ENV_KEYS = {
+    "OPENAI_API_KEY",
+    "APP_PASSWORD",
+    "ADMIN_PASSWORD",
+    "APP_SESSION_SECRET",
+    "IMAGE_PROVIDERS",
+}
 
 logger = logging.getLogger("image_cli")
 logger.setLevel(logging.INFO)
@@ -125,6 +178,7 @@ if not (settings.app_password and settings.session_secret):
 
 class GenerateImageRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=8000)
+    provider_id: str | None = None
     model: str | None = None
     size: str | None = None
     quality: str | None = None
@@ -149,6 +203,14 @@ class GenerateImageResponse(BaseModel):
     model: str
     images: list[GeneratedImage]
     provider_response: dict[str, Any]
+
+
+class ProviderConfig(BaseModel):
+    id: str
+    name: str
+    base_url: str
+    api_key: str
+    note: str = ""
 
 
 def _log_event(event: str, **fields: Any) -> None:
@@ -216,6 +278,84 @@ def _validate_size_budget(size: str) -> None:
                 f"budget of {MAX_IMAGE_PIXELS:,} pixels."
             ),
         )
+
+
+def _provider_url(provider: ProviderConfig, path: str) -> str:
+    return f"{provider.base_url.rstrip('/')}/{path.lstrip('/')}"
+
+
+def _default_provider_config() -> ProviderConfig:
+    return ProviderConfig(
+        id="default",
+        name="Default",
+        base_url=settings.base_url,
+        api_key=settings.api_key,
+        note="Default provider from OPENAI_BASE_URL / OPENAI_API_KEY",
+    )
+
+
+def _safe_provider_id(value: Any, fallback: str) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return fallback
+    safe = "".join(char if char.isalnum() or char in "-_" else "-" for char in text)
+    return safe.strip("-_") or fallback
+
+
+def _load_provider_configs(raw: str | None = None) -> list[ProviderConfig]:
+    raw = (settings.image_providers if raw is None else raw).strip()
+    providers: list[ProviderConfig] = []
+    if raw:
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            data = []
+        if isinstance(data, list):
+            for index, item in enumerate(data, start=1):
+                if not isinstance(item, dict):
+                    continue
+                provider_id = _safe_provider_id(item.get("id"), f"provider-{index}")
+                name = str(item.get("name") or provider_id).strip()
+                base_url = str(item.get("base_url") or "").strip()
+                api_key = str(item.get("api_key") or "").strip()
+                note = str(item.get("note") or "").strip()
+                if not base_url:
+                    continue
+                providers.append(
+                    ProviderConfig(
+                        id=provider_id,
+                        name=name,
+                        base_url=base_url,
+                        api_key=api_key,
+                        note=note,
+                    )
+                )
+    if not providers:
+        providers.append(_default_provider_config())
+    return providers
+
+
+def _provider_public(provider: ProviderConfig) -> dict[str, Any]:
+    return {
+        "id": provider.id,
+        "name": provider.name,
+        "base_url": provider.base_url,
+        "note": provider.note,
+        "api_key_configured": bool(provider.api_key),
+    }
+
+
+def _get_provider(provider_id: str | None) -> ProviderConfig:
+    providers = _load_provider_configs()
+    wanted = str(provider_id or "").strip() or providers[0].id
+    for provider in providers:
+        if provider.id == wanted:
+            return provider
+    raise HTTPException(status_code=400, detail=f"Provider '{wanted}' is not configured")
+
+
+def _provider_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in payload.items() if key != "provider_id"}
 
 
 @contextmanager
@@ -307,12 +447,105 @@ def _require_auth(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Authentication required")
 
 
+def _admin_password() -> str:
+    return settings.admin_password or settings.app_password
+
+
+def _require_admin(request: Request) -> None:
+    _require_auth(request)
+    password = _admin_password()
+    if not password:
+        raise HTTPException(
+            status_code=503,
+            detail="ADMIN_PASSWORD or APP_PASSWORD is required to use the admin panel",
+        )
+    supplied = request.headers.get("x-admin-password", "")
+    if not hmac.compare_digest(supplied, password):
+        raise HTTPException(status_code=401, detail="Admin password is incorrect")
+
+
 def _template_path(name: str) -> Path:
     return Path(__file__).parent / "templates" / name
 
 
 def _read_template(name: str) -> str:
     return _template_path(name).read_text(encoding="utf-8")
+
+
+def _env_path() -> Path:
+    return Path(os.getenv("ENV_FILE", ".env"))
+
+
+def _env_encode(value: str) -> str:
+    if value == "":
+        return ""
+    safe_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./:-[]")
+    if all(char in safe_chars for char in value):
+        return value
+    return json.dumps(value, ensure_ascii=False)
+
+
+def _env_public_value(key: str, values: dict[str, Any]) -> dict[str, Any]:
+    value = values.get(key)
+    if value is None or str(value).strip() == "":
+        runtime_defaults = {
+            "OPENAI_BASE_URL": settings.base_url,
+            "IMAGE_PROVIDERS": settings.image_providers,
+            "IMAGE_MODEL": settings.model,
+            "IMAGE_SIZE": settings.image_size,
+            "IMAGE_QUALITY": settings.image_quality,
+            "IMAGE_OUTPUT_FORMAT": settings.image_output_format,
+            "IMAGE_RESPONSE_FORMAT": settings.response_format,
+            "IMAGE_EDIT_IMAGE_FIELD": settings.edit_image_field,
+            "OUTPUT_DIR": str(settings.output_dir),
+            "LOG_DIR": str(settings.log_dir),
+            "REQUEST_TIMEOUT_SECONDS": str(int(settings.timeout_seconds)),
+            "PROVIDER_MAX_ATTEMPTS": str(settings.provider_max_attempts),
+            "HISTORY_LIMIT": str(HISTORY_LIMIT),
+            "MAX_ACTIVE_JOBS": str(MAX_ACTIVE_JOBS),
+            "SYSTEMD_UNIT": settings.systemd_unit,
+        }
+        value = runtime_defaults.get(key, os.getenv(key, ""))
+    value = str(value or "")
+    if key in SECRET_ENV_KEYS:
+        return {"value": "", "configured": bool(value), "secret": True}
+    return {"value": value, "configured": bool(value), "secret": False}
+
+
+def _admin_config_payload() -> dict[str, Any]:
+    env_values = dict(dotenv_values(_env_path()))
+    raw_providers = str(env_values.get("IMAGE_PROVIDERS") or settings.image_providers or "")
+    return {
+        "env_file": str(_env_path()),
+        "needs_restart": True,
+        "providers": [_provider_public(provider) for provider in _load_provider_configs(raw_providers)],
+        "config": {
+            key: _env_public_value(key, env_values)
+            for key in sorted(ENV_CONFIG_KEYS)
+        },
+    }
+
+
+def _write_env_updates(updates: dict[str, str]) -> None:
+    path = _env_path()
+    existing_lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+    remaining = dict(updates)
+    next_lines: list[str] = []
+    for line in existing_lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in line:
+            next_lines.append(line)
+            continue
+        key = line.split("=", 1)[0].strip()
+        if key in remaining:
+            next_lines.append(f"{key}={_env_encode(remaining.pop(key))}")
+        else:
+            next_lines.append(line)
+    if remaining and next_lines and next_lines[-1].strip():
+        next_lines.append("")
+    for key in sorted(remaining):
+        next_lines.append(f"{key}={_env_encode(remaining[key])}")
+    path.write_text("\n".join(next_lines).rstrip() + "\n", encoding="utf-8")
 
 
 def _sse_payload(line: str) -> str:
@@ -368,11 +601,13 @@ async def _stream_command_lines(
         yield _sse_payload(
             _format_debug_line(f"日志进程启动失败：{exc.__class__.__name__}: {exc}", source)
         )
+        yield _sse_event("close", {"reason": "process_start_failed"})
         return
 
     try:
         if process.stdout is None:
             yield _sse_payload(_format_debug_line("日志进程没有可读取的输出", source))
+            yield _sse_event("close", {"reason": "no_stdout"})
             return
         while True:
             line = await process.stdout.readline()
@@ -382,6 +617,7 @@ async def _stream_command_lines(
                     yield _sse_payload(
                         _format_debug_line(f"日志进程已退出，exit={return_code}", source)
                     )
+                yield _sse_event("close", {"reason": "process_exited", "exit": return_code})
                 return
             text = line.decode("utf-8", errors="replace").rstrip("\n")
             yield _sse_payload(_format_debug_line(text, source))
@@ -415,6 +651,40 @@ def _debug_log_command(source: str) -> tuple[list[str], str]:
                 "-o",
                 "short-iso",
             ],
+            "",
+        )
+
+    if source == "cliproxyapi":
+        journalctl = shutil.which("journalctl")
+        if not journalctl:
+            return (
+                ["journalctl"],
+                "当前系统没有 journalctl，cliproxyapi.service 日志只能在 Linux systemd 服务器上查看。",
+            )
+        return (
+            [
+                journalctl,
+                "-u",
+                "cliproxyapi.service",
+                "-n",
+                "200",
+                "-f",
+                "--no-pager",
+                "-o",
+                "short-iso",
+            ],
+            "",
+        )
+
+    if source == "chatgpt2api":
+        docker = shutil.which("docker")
+        if not docker:
+            return (
+                ["docker"],
+                "当前系统没有 docker，无法查看 chatgpt2api 容器日志。",
+            )
+        return (
+            [docker, "logs", "--tail", "200", "-f", "chatgpt2api"],
             "",
         )
 
@@ -702,6 +972,8 @@ def _history_public(record: dict[str, Any]) -> dict[str, Any]:
         "actual_quality": actual_quality,
         "output_format": record.get("output_format", ""),
         "model": record.get("model", ""),
+        "provider_id": record.get("provider_id", ""),
+        "provider_name": record.get("provider_name", ""),
         "operation": record.get("operation", "generate"),
         "source_file": record.get("source_file"),
         "source_history_id": record.get("source_history_id"),
@@ -964,6 +1236,97 @@ def debug_page(request: Request):
     return HTMLResponse(_read_template("debug.html"))
 
 
+@app.get("/admin", response_class=HTMLResponse)
+def admin_page(request: Request):
+    if not _is_authenticated(request):
+        return RedirectResponse("/login", status_code=303)
+    return HTMLResponse(_read_template("admin.html"))
+
+
+@app.get("/v1/admin/config")
+def admin_config(request: Request) -> dict[str, Any]:
+    _require_admin(request)
+    return _admin_config_payload()
+
+
+@app.post("/v1/admin/config")
+async def update_admin_config(request: Request) -> dict[str, Any]:
+    _require_admin(request)
+    body = await request.json()
+    raw_config = body.get("config", {})
+    if not isinstance(raw_config, dict):
+        raise HTTPException(status_code=400, detail="config must be an object")
+    updates: dict[str, str] = {}
+    for key, value in raw_config.items():
+        key = str(key)
+        if key not in ENV_CONFIG_KEYS:
+            raise HTTPException(status_code=400, detail=f"{key} is not configurable")
+        text_value = str(value)
+        if key in SECRET_ENV_KEYS and text_value == "":
+            continue
+        updates[key] = text_value
+    raw_providers = body.get("providers")
+    if raw_providers is not None:
+        if not isinstance(raw_providers, list):
+            raise HTTPException(status_code=400, detail="providers must be a list")
+        env_values = dict(dotenv_values(_env_path()))
+        existing_raw_providers = str(env_values.get("IMAGE_PROVIDERS") or settings.image_providers or "")
+        existing_by_id = {
+            provider.id: provider
+            for provider in _load_provider_configs(existing_raw_providers)
+        }
+        provider_updates: list[dict[str, str]] = []
+        for index, item in enumerate(raw_providers, start=1):
+            if not isinstance(item, dict):
+                continue
+            provider_id = _safe_provider_id(item.get("id"), f"provider-{index}")
+            name = str(item.get("name") or provider_id).strip()
+            base_url = str(item.get("base_url") or "").strip()
+            note = str(item.get("note") or "").strip()
+            api_key = str(item.get("api_key") or "").strip()
+            if not base_url:
+                continue
+            if not api_key and provider_id in existing_by_id:
+                api_key = existing_by_id[provider_id].api_key
+            provider_updates.append(
+                {
+                    "id": provider_id,
+                    "name": name,
+                    "base_url": base_url,
+                    "api_key": api_key,
+                    "note": note,
+                }
+            )
+        if provider_updates:
+            updates["IMAGE_PROVIDERS"] = json.dumps(provider_updates, ensure_ascii=False)
+    if updates:
+        _write_env_updates(updates)
+        _log_event("admin_config_updated", keys=sorted(updates))
+    return {"ok": True, "updated": sorted(updates), **_admin_config_payload()}
+
+
+@app.post("/v1/admin/restart")
+def restart_service(request: Request) -> dict[str, Any]:
+    _require_admin(request)
+    systemctl = shutil.which("systemctl")
+    if not systemctl:
+        raise HTTPException(
+            status_code=501,
+            detail="systemctl is not available. Restart the uvicorn process manually.",
+        )
+    unit = settings.systemd_unit.strip()
+    if not unit or any(char in unit for char in " \t\n\r;&|`$<>"):
+        raise HTTPException(status_code=400, detail="SYSTEMD_UNIT is invalid")
+    subprocess.Popen(
+        [systemctl, "restart", unit],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+    _log_event("admin_restart_requested", unit=unit)
+    return {"ok": True, "unit": unit, "message": "Restart command issued"}
+
+
 @app.get("/v1/debug/logs/{source}")
 async def debug_logs(source: str, request: Request) -> StreamingResponse:
     _require_auth(request)
@@ -992,6 +1355,16 @@ def serve_file(filename: str, request: Request) -> FileResponse:
 def history(request: Request) -> dict[str, list[dict[str, Any]]]:
     _require_auth(request)
     return {"images": [_history_public(record) for record in _load_history()]}
+
+
+@app.get("/v1/providers")
+def providers(request: Request) -> dict[str, Any]:
+    _require_auth(request)
+    provider_list = [_provider_public(provider) for provider in _load_provider_configs()]
+    return {
+        "providers": provider_list,
+        "default_provider_id": provider_list[0]["id"] if provider_list else "",
+    }
 
 
 @app.get("/v1/history/{history_id}")
@@ -1044,6 +1417,7 @@ def _payload_from_request(request: GenerateImageRequest) -> dict[str, Any]:
     _validate_size_budget(size)
     payload: dict[str, Any] = {
         "model": request.model or settings.model,
+        "provider_id": request.provider_id or "",
         "prompt": request.prompt,
         "size": size,
         "quality": request.quality or settings.image_quality,
@@ -1069,6 +1443,7 @@ def _parse_extra_json(extra: str | None) -> dict[str, Any]:
 
 def _payload_from_edit_form(
     prompt: str,
+    provider_id: str | None,
     model: str | None,
     size: str | None,
     quality: str | None,
@@ -1090,6 +1465,7 @@ def _payload_from_edit_form(
     _validate_size_budget(image_size)
     payload: dict[str, Any] = {
         "model": model or settings.model,
+        "provider_id": provider_id or "",
         "prompt": prompt,
         "size": image_size,
         "quality": quality or settings.image_quality,
@@ -1341,6 +1717,8 @@ def _save_images_to_history(
             "actual_quality": effective_quality,
             "output_format": provider_json.get("output_format") or payload.get("output_format", ""),
             "model": payload["model"],
+            "provider_id": payload.get("provider_id", ""),
+            "provider_name": provider_json.get("provider_name", ""),
             "operation": operation,
             "source_file": source_file,
             "file_size_bytes": metadata["file_size_bytes"],
@@ -1361,6 +1739,10 @@ def _save_failure_to_history(
 ) -> None:
     payload = dict(job.get("payload") or {})
     edit_inputs = job.get("edit_inputs") if isinstance(job.get("edit_inputs"), dict) else {}
+    try:
+        provider_name = _get_provider(str(payload.get("provider_id") or "")).name
+    except HTTPException:
+        provider_name = ""
     now = int(time.time())
     _append_history(
         [
@@ -1373,6 +1755,8 @@ def _save_failure_to_history(
                 "actual_quality": "",
                 "output_format": payload.get("output_format", ""),
                 "model": payload.get("model", settings.model),
+                "provider_id": payload.get("provider_id", ""),
+                "provider_name": provider_name,
                 "operation": job.get("operation") or "generate",
                 "source_file": edit_inputs.get("source_file"),
                 "source_history_id": edit_inputs.get("source_history_id"),
@@ -1448,6 +1832,7 @@ def _combine_provider_responses(
 
 async def _request_provider_images(
     client: httpx.AsyncClient,
+    provider_url: str,
     headers: dict[str, str],
     provider_payload: dict[str, Any],
     request_id: str,
@@ -1456,7 +1841,7 @@ async def _request_provider_images(
 ) -> tuple[dict[str, Any], list[GeneratedImage]]:
     try:
         response = await _post_with_retry(
-            client, settings.images_url, headers, provider_payload, request_id
+            client, provider_url, headers, provider_payload, request_id
         )
         response.raise_for_status()
     except httpx.HTTPStatusError as exc:
@@ -1472,7 +1857,7 @@ async def _request_provider_images(
         raise HTTPException(status_code=exc.response.status_code, detail=detail) from exc
     except httpx.HTTPError as exc:
         detail = _provider_request_error_detail(
-            exc, provider_payload, settings.images_url, started_at
+            exc, provider_payload, provider_url, started_at
         )
         _log_event(
             "generate_provider_request_error",
@@ -1613,6 +1998,7 @@ async def _post_multipart_with_retry(
 
 async def _request_provider_edit_images(
     client: httpx.AsyncClient,
+    provider_url: str,
     headers: dict[str, str],
     provider_payload: dict[str, Any],
     files: list[tuple[str, tuple[str, bytes, str]]],
@@ -1622,7 +2008,7 @@ async def _request_provider_edit_images(
     try:
         response = await _post_multipart_with_retry(
             client,
-            settings.image_edits_url,
+            provider_url,
             headers,
             provider_payload,
             files,
@@ -1641,7 +2027,7 @@ async def _request_provider_edit_images(
         raise HTTPException(status_code=exc.response.status_code, detail=detail) from exc
     except httpx.HTTPError as exc:
         detail = _provider_request_error_detail(
-            exc, provider_payload, settings.image_edits_url, started_at
+            exc, provider_payload, provider_url, started_at
         )
         _log_event("edit_provider_request_error", request_id=request_id, detail=detail)
         raise HTTPException(status_code=502, detail=detail) from exc
@@ -1686,23 +2072,29 @@ async def _execute_generation(
     started_at: float,
     client_host: str | None = None,
 ) -> GenerateImageResponse:
-    if not settings.api_key:
+    provider = _get_provider(str(payload.get("provider_id") or ""))
+    if not provider.api_key:
         _log_event(
             "generate_config_error",
             request_id=request_id,
-            detail="OPENAI_API_KEY is not configured",
+            provider_id=provider.id,
+            detail=f"Provider '{provider.name}' API key is not configured",
         )
-        raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not configured")
+        raise HTTPException(status_code=500, detail=f"Provider '{provider.name}' API key is not configured")
 
     headers = {
-        "Authorization": f"Bearer {settings.api_key}",
+        "Authorization": f"Bearer {provider.api_key}",
         "Content-Type": "application/json",
     }
+    provider_payload = _provider_payload(payload)
+    provider_url = _provider_url(provider, "images/generations")
 
     _log_event(
         "generate_start",
         request_id=request_id,
-        provider_url=settings.images_url,
+        provider_id=provider.id,
+        provider_name=provider.name,
+        provider_url=provider_url,
         payload=payload,
         client=client_host,
     )
@@ -1714,8 +2106,9 @@ async def _execute_generation(
     async with httpx.AsyncClient(timeout=settings.timeout_seconds) as client:
         provider_json, provider_images = await _request_provider_images(
             client,
+            provider_url,
             headers,
-            payload,
+            provider_payload,
             request_id,
             started_at,
             provider_request_index=1,
@@ -1737,10 +2130,11 @@ async def _execute_generation(
         for offset in range(missing):
             if len(images) >= requested_n:
                 break
-            single_payload = payload.copy()
+            single_payload = provider_payload.copy()
             single_payload["n"] = 1
             provider_json, provider_images = await _request_provider_images(
                 client,
+                provider_url,
                 headers,
                 single_payload,
                 request_id,
@@ -1753,7 +2147,9 @@ async def _execute_generation(
     if len(images) > requested_n:
         images = images[:requested_n]
 
-    provider_json = _combine_provider_responses(provider_responses, payload, len(images))
+    provider_json = _combine_provider_responses(provider_responses, provider_payload, len(images))
+    provider_json["provider_id"] = provider.id
+    provider_json["provider_name"] = provider.name
 
     _save_images_to_history(images, provider_json, payload, prompt, "generate")
 
@@ -1789,16 +2185,20 @@ async def _execute_edit(
     client_host: str | None = None,
     source_file: str | None = None,
 ) -> GenerateImageResponse:
-    if not settings.api_key:
+    provider = _get_provider(str(payload.get("provider_id") or ""))
+    if not provider.api_key:
         _log_event(
             "edit_config_error",
             request_id=request_id,
-            detail="OPENAI_API_KEY is not configured",
+            provider_id=provider.id,
+            detail=f"Provider '{provider.name}' API key is not configured",
         )
-        raise HTTPException(status_code=500, detail="OPENAI_API_KEY is not configured")
+        raise HTTPException(status_code=500, detail=f"Provider '{provider.name}' API key is not configured")
 
-    headers = {"Authorization": f"Bearer {settings.api_key}"}
-    form_payload = {key: str(value) for key, value in payload.items() if value is not None}
+    headers = {"Authorization": f"Bearer {provider.api_key}"}
+    provider_payload = _provider_payload(payload)
+    provider_url = _provider_url(provider, "images/edits")
+    form_payload = {key: str(value) for key, value in provider_payload.items() if value is not None}
     files: list[tuple[str, tuple[str, bytes, str]]] = []
     for source_image in source_images:
         content = source_image.get("content")
@@ -1831,7 +2231,9 @@ async def _execute_edit(
     _log_event(
         "edit_start",
         request_id=request_id,
-        provider_url=settings.image_edits_url,
+        provider_id=provider.id,
+        provider_name=provider.name,
+        provider_url=provider_url,
         payload=payload,
         files=_multipart_file_summary(files),
         client=client_host,
@@ -1840,12 +2242,15 @@ async def _execute_edit(
     async with httpx.AsyncClient(timeout=settings.timeout_seconds) as client:
         provider_json, images = await _request_provider_edit_images(
             client,
+            provider_url,
             headers,
             form_payload,
             files,
             request_id,
             started_at,
         )
+    provider_json["provider_id"] = provider.id
+    provider_json["provider_name"] = provider.name
 
     source_file = source_file or (
         _save_uploaded_source_copy(source_images[0]) if source_images else None
@@ -2026,6 +2431,7 @@ async def create_edit_job(
     image: list[UploadFile] = File(...),
     mask: UploadFile | None = File(default=None),
     prompt: str = Form(...),
+    provider_id: str | None = Form(default=None),
     model: str | None = Form(default=None),
     size: str | None = Form(default=None),
     quality: str | None = Form(default=None),
@@ -2040,6 +2446,7 @@ async def create_edit_job(
     source_images, mask_image = await _read_edit_uploads(image, mask)
     payload = _payload_from_edit_form(
         prompt=prompt,
+        provider_id=provider_id,
         model=model,
         size=size,
         quality=quality,
@@ -2130,6 +2537,7 @@ async def edit_image(
     image: list[UploadFile] = File(...),
     mask: UploadFile | None = File(default=None),
     prompt: str = Form(...),
+    provider_id: str | None = Form(default=None),
     model: str | None = Form(default=None),
     size: str | None = Form(default=None),
     quality: str | None = Form(default=None),
@@ -2144,6 +2552,7 @@ async def edit_image(
     source_images, mask_image = await _read_edit_uploads(image, mask)
     payload = _payload_from_edit_form(
         prompt=prompt,
+        provider_id=provider_id,
         model=model,
         size=size,
         quality=quality,

@@ -307,6 +307,29 @@
         box-shadow: 0 0 0 4px var(--accent-glow);
         background: #fff;
       }
+      .provider-select {
+        width: 100%;
+        padding: 9px 10px;
+        background: var(--bg-input);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        color: var(--text);
+        font-size: 13px;
+        font-weight: 650;
+        outline: none;
+      }
+      .provider-select:hover { border-color: var(--border-hover); background: rgba(255, 255, 255, 0.86); }
+      .provider-select:focus {
+        border-color: var(--border-focus);
+        box-shadow: 0 0 0 4px var(--accent-glow);
+        background: #fff;
+      }
+      .provider-note {
+        min-height: 15px;
+        color: var(--text-muted);
+        font-size: 11px;
+        line-height: 1.4;
+      }
 
       .segmented { display: flex; gap: 5px; }
       .seg-btn {
@@ -1154,6 +1177,9 @@
             Image CLI
           </div>
           <div class="top-actions">
+            <a class="icon-btn" href="/admin" target="_blank" rel="noopener" title="Admin Settings">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 9 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.2.38.57.6 1 .6H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1.4Z"/></svg>
+            </a>
             <a class="icon-btn" href="/debug" target="_blank" rel="noopener" title="Debug Logs">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"/><path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></svg>
             </a>
@@ -1169,6 +1195,11 @@
               <button class="mode-btn active" type="button" data-mode="generate">Generate</button>
               <button class="mode-btn" type="button" data-mode="edit">Edit</button>
             </div>
+          </div>
+          <div class="field">
+            <div class="field-label">Provider</div>
+            <select class="provider-select" id="providerSelect" title="Loading providers..."></select>
+            <div class="provider-note" id="providerNote">Loading providers...</div>
           </div>
           <div class="edit-fields" id="editFields" hidden>
             <div class="field">
@@ -1374,6 +1405,8 @@
       const modalCopy = document.querySelector("#modalCopy");
       const modalClose = document.querySelector("#modalClose");
       const modeSwitch = document.querySelector("#modeSwitch");
+      const providerSelect = document.querySelector("#providerSelect");
+      const providerNote = document.querySelector("#providerNote");
       const editFields = document.querySelector("#editFields");
       const editImageInput = document.querySelector("#editImageInput");
       const editMaskInput = document.querySelector("#editMaskInput");
@@ -1409,12 +1442,15 @@
       let jobsRefreshTimer = null;
       const historyHeightKey = "imageCliHistoryHeight_v2";
       const modeStorageKey = "imageCliMode_v1";
+      const providerStorageKey = "imageCliProviderId_v1";
 
       let selectedRatio = "1:1";
       let selectedResolution = "1k";
       let selectedSize = resolutionSizeMap[selectedRatio][selectedResolution];
       let selectedQuality = "auto";
       let selectedOutputFormat = "png";
+      let selectedProviderId = "";
+      let providers = [];
       let selectedMode = "generate";
       let editSourceFiles = [];
       let editSourceOrigin = null;
@@ -1466,6 +1502,7 @@
       }
       function applyHistoryOptions(record) {
         setMode(record.operation === "edit" ? "edit" : "generate");
+        if (record.provider_id) setProvider(record.provider_id);
         promptInput.value = record.prompt || "";
         if (record.size) applySizeSelection(record.size);
         selectedQuality = record.requested_quality || record.quality || "auto";
@@ -1482,6 +1519,36 @@
       }
       function isFailedRecord(record) {
         return record?.status === "failed";
+      }
+      function setProvider(providerId) {
+        selectedProviderId = providerId || providers[0]?.id || "";
+        providerSelect.value = selectedProviderId;
+        localStorage.setItem(providerStorageKey, selectedProviderId);
+        const provider = providers.find(item => item.id === selectedProviderId);
+        const note = provider?.note || "No provider remark configured.";
+        providerSelect.title = note;
+        providerNote.textContent = note;
+      }
+      async function loadProviders() {
+        try {
+          const res = await fetch("/v1/providers");
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          providers = data.providers || [];
+          providerSelect.replaceChildren(...providers.map(provider => {
+            const option = document.createElement("option");
+            option.value = provider.id;
+            option.textContent = provider.name || provider.id;
+            option.title = provider.note || "";
+            return option;
+          }));
+          setProvider(localStorage.getItem(providerStorageKey) || data.default_provider_id || providers[0]?.id || "");
+        } catch (error) {
+          providers = [];
+          providerSelect.replaceChildren(Object.assign(document.createElement("option"), { value: "", textContent: "Provider load failed" }));
+          providerNote.textContent = `Provider load failed: ${error.message}`;
+          providerSelect.title = providerNote.textContent;
+        }
       }
       function setMode(mode) {
         selectedMode = mode === "edit" ? "edit" : "generate";
@@ -1571,6 +1638,7 @@
         if (!btn || submit.disabled) return;
         setMode(btn.dataset.mode);
       });
+      providerSelect.addEventListener("change", () => setProvider(providerSelect.value));
       editImageInput.addEventListener("change", () => {
         appendEditSourceFiles([...editImageInput.files]);
         editImageInput.value = "";
@@ -2096,7 +2164,7 @@
       window.addEventListener("keydown", e => { if (e.key === "Escape" && !modal.hidden) closeModal(); });
 
       function isActiveJob(j) { return j?.status === "queued" || j?.status === "running"; }
-      function bodyFromJob(j) { const p = j.payload || {}; return { operation: j.operation || "generate", prompt: j.prompt || p.prompt || "", size: p.size || "", quality: p.quality || "auto", output_format: p.output_format || "png", n: p.n || 1 }; }
+      function bodyFromJob(j) { const p = j.payload || {}; return { operation: j.operation || "generate", provider_id: p.provider_id || "", prompt: j.prompt || p.prompt || "", size: p.size || "", quality: p.quality || "auto", output_format: p.output_format || "png", n: p.n || 1 }; }
       function renderJobsPopover() {
         const jobs = [...backgroundJobs.values()].filter(isActiveJob);
         backgroundJobs.clear(); jobs.forEach(j => backgroundJobs.set(j.id, j));
@@ -2314,13 +2382,14 @@
           innerHTML: `<div class="spinner"></div><div class="loader-text">${busyLabel(selectedMode)}...</div><div class="loader-sub">4K, edits, or complex prompts may take a few minutes</div>`
         }));
         const count = Math.min(10, Math.max(1, parseInt(form.querySelector('[name="n"]').value, 10) || 1));
-        const body = { operation: selectedMode, prompt: promptInput.value, size, quality: selectedQuality, output_format: selectedOutputFormat, n: count };
+        const body = { operation: selectedMode, provider_id: selectedProviderId, prompt: promptInput.value, size, quality: selectedQuality, output_format: selectedOutputFormat, n: count };
         let res, data;
         try {
           if (selectedMode === "edit") {
             const formData = new FormData();
             editSourceFiles.forEach(file => formData.append("image", file));
             if (editMaskInput.files[0]) formData.append("mask", editMaskInput.files[0]);
+            formData.append("provider_id", body.provider_id);
             formData.append("prompt", body.prompt);
             formData.append("size", body.size);
             formData.append("quality", body.quality);
@@ -2364,6 +2433,7 @@
       }
 
       setMode(localStorage.getItem(modeStorageKey) || "generate");
+      loadProviders();
       window.addEventListener("beforeunload", clearEditPreviews);
       loadHistory(); resumeActiveJob(); refreshBgJobs();
       jobsRefreshTimer = setInterval(refreshBgJobs, 10000);

@@ -118,6 +118,7 @@
         min-height: 0;
         display: grid;
         grid-template-columns: 1fr 1fr;
+        grid-template-rows: repeat(2, minmax(0, 1fr));
         gap: 10px;
         padding: 10px 24px 14px;
         animation: fadeInUp 0.4s 0.06s cubic-bezier(0.16, 1, 0.3, 1) both;
@@ -155,6 +156,14 @@
       .panel-icon.app {
         background: var(--green-subtle);
         color: var(--green);
+      }
+      .panel-icon.docker {
+        background: rgba(14, 165, 233, 0.08);
+        color: #0284c7;
+      }
+      .panel-icon.service {
+        background: rgba(245, 158, 11, 0.1);
+        color: #d97706;
       }
       .panel-icon svg { width: 13px; height: 13px; }
       .panel-title { font-size: 13px; font-weight: 600; }
@@ -214,7 +223,7 @@
       @media (max-width: 900px) {
         body { height: 100dvh; }
         .shell { height: 100dvh; }
-        .panels { grid-template-columns: 1fr; padding: 8px 14px 10px; }
+        .panels { grid-template-columns: 1fr; grid-template-rows: repeat(4, minmax(260px, 1fr)); padding: 8px 14px 10px; overflow: auto; }
         header { padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
         .hint { display: none; }
       }
@@ -280,6 +289,42 @@
           </div>
           <div class="log-view" id="appLog"></div>
         </section>
+        <section class="panel">
+          <div class="panel-head">
+            <div class="panel-head-left">
+              <div class="panel-icon docker">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12.5c-.6.3-1.2.5-2 .5h-1v1a5 5 0 0 1-5 5H8a6 6 0 0 1-6-6v-1h16.5"/><path d="M5 8h3v4H5z"/><path d="M8 8h3v4H8z"/><path d="M11 8h3v4h-3z"/><path d="M8 4h3v4H8z"/><path d="M11 4h3v4h-3z"/><path d="M14 8h3v4h-3z"/><path d="M20 10c0-1 .5-2 2-2"/></svg>
+              </div>
+              <div>
+                <div class="panel-title">docker / chatgpt2api</div>
+                <div class="panel-subtitle">chatgpt2api 容器日志流</div>
+              </div>
+            </div>
+            <span class="status-pill connecting" id="chatgpt2apiState">
+              <span class="status-dot"></span>
+              connecting
+            </span>
+          </div>
+          <div class="log-view" id="chatgpt2apiLog"></div>
+        </section>
+        <section class="panel">
+          <div class="panel-head">
+            <div class="panel-head-left">
+              <div class="panel-icon service">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M8 7h8"/><path d="M8 11h8"/><path d="M8 15h5"/></svg>
+              </div>
+              <div>
+                <div class="panel-title">cliproxyapi.service</div>
+                <div class="panel-subtitle">systemd journal 日志流</div>
+              </div>
+            </div>
+            <span class="status-pill connecting" id="cliproxyapiState">
+              <span class="status-dot"></span>
+              connecting
+            </span>
+          </div>
+          <div class="log-view" id="cliproxyapiLog"></div>
+        </section>
       </div>
     </div>
     <script>
@@ -337,6 +382,8 @@
 
       attachLog('journal', 'journalLog', 'journalState');
       attachLog('app', 'appLog', 'appState');
+      attachLog('chatgpt2api', 'chatgpt2apiLog', 'chatgpt2apiState');
+      attachLog('cliproxyapi', 'cliproxyapiLog', 'cliproxyapiState');
     </script>
   </body>
 </html>
