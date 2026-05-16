@@ -1565,11 +1565,18 @@
       .history-list {
         height: auto;
         min-height: calc(100vh - 52px);
-        display: block;
-        columns: 4 220px;
-        column-gap: 14px;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+        align-items: start;
         overflow: visible;
         padding: 10px 28px calc(20vh + 52px);
+      }
+      .history-column {
+        display: grid;
+        gap: 14px;
+        align-content: start;
+        min-width: 0;
       }
       .history-list.selecting .history-check,
       .selecting .history-check { visibility: visible; }
@@ -1583,7 +1590,7 @@
         display: block;
         width: 100%;
         min-width: 0;
-        margin: 0 0 14px;
+        margin: 0;
         padding: 0;
         overflow: hidden;
         border: 1px solid var(--border);
@@ -1825,7 +1832,7 @@
         text-decoration: none;
       }
       @media (max-width: 1024px) {
-        .history-list { columns: 3 190px; }
+        .history-list { grid-template-columns: repeat(3, minmax(0, 1fr)); }
       }
       @media (hover: none), (pointer: coarse) {
         .history-row {
@@ -1864,7 +1871,7 @@
           max-height: 64vh;
         }
         .history-list {
-          columns: 2 150px;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
           padding: 14px 14px 132px;
         }
         .topbar { right: 112px; }
@@ -2411,7 +2418,7 @@
           min-height: 30px;
         }
         .history-list {
-          columns: 2 150px;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
           min-height: calc(100dvh - 52px);
           padding: 14px 12px calc(17vh + 56px);
         }
@@ -2779,7 +2786,11 @@
       let allHistoryRecords = [];
       let visibleHistoryRecords = [];
       let renderedHistoryCount = 0;
+      let renderedHistoryPrefixCount = 0;
       let historyScrollQueued = false;
+      let historyColumns = [];
+      let historyColumnCount = 0;
+      let historyRelayoutQueued = false;
       let revealedHistoryRow = null;
       let revealFrameQueued = false;
       let pendingRevealPoint = null;
@@ -3675,15 +3686,31 @@
         });
         return row;
       }
+      function getHistoryColumnCount() {
+        if (window.matchMedia("(max-width: 760px)").matches) return 2;
+        if (window.matchMedia("(max-width: 1024px)").matches) return 3;
+        return 4;
+      }
+      function createHistoryColumns(count) {
+        historyColumns = Array.from({ length: count }, () => {
+          const column = document.createElement("div");
+          column.className = "history-column";
+          return column;
+        });
+        historyColumnCount = count;
+        return historyColumns;
+      }
+      function appendHistoryNode(node, orderedIndex) {
+        const columnCount = historyColumns.length || 1;
+        historyColumns[orderedIndex % columnCount].append(node);
+      }
       function appendHistoryBatch() {
         if (renderedHistoryCount >= visibleHistoryRecords.length) return false;
         const start = renderedHistoryCount;
         const end = Math.min(start + historyAppendBatchSize, visibleHistoryRecords.length);
-        const fragment = document.createDocumentFragment();
         for (let i = start; i < end; i++) {
-          fragment.append(createHistoryRow(visibleHistoryRecords[i]));
+          appendHistoryNode(createHistoryRow(visibleHistoryRecords[i]), renderedHistoryPrefixCount + i);
         }
-        history.append(fragment);
         renderedHistoryCount = end;
         updateSelectionUi();
         return true;
@@ -3699,11 +3726,22 @@
         historyScrollQueued = true;
         requestAnimationFrame(appendHistoryIfNeeded);
       }
-      function renderHistory(records) {
+      function queueHistoryRelayout() {
+        if (historyRelayoutQueued) return;
+        historyRelayoutQueued = true;
+        requestAnimationFrame(() => {
+          historyRelayoutQueued = false;
+          if (historyColumnCount && getHistoryColumnCount() !== historyColumnCount) {
+            renderHistory(allHistoryRecords, { keepRenderedCount: renderedHistoryCount });
+          }
+        });
+      }
+      function renderHistory(records, options = {}) {
         visibleHistoryRecords = [...records];
         const visibleJobs = [...pendingHistoryJobs.values()];
         historyCount.textContent = `${visibleHistoryRecords.length + visibleJobs.length}`;
         renderedHistoryCount = 0;
+        renderedHistoryPrefixCount = visibleJobs.length;
         historyScrollQueued = false;
         if (revealedHistoryRow?.isConnected) revealedHistoryRow.classList.remove("is-revealed");
         revealedHistoryRow = null;
@@ -3712,10 +3750,12 @@
           updateSelectionUi(); return;
         }
         const fragment = document.createDocumentFragment();
-        visibleJobs.forEach(job => fragment.append(createJobPlaceholderRow(job)));
-        const initialCount = Math.min(historyInitialBatchSize, visibleHistoryRecords.length);
+        createHistoryColumns(getHistoryColumnCount()).forEach(column => fragment.append(column));
+        visibleJobs.forEach((job, index) => appendHistoryNode(createJobPlaceholderRow(job), index));
+        const requestedCount = options.keepRenderedCount || historyInitialBatchSize;
+        const initialCount = Math.min(Math.max(historyInitialBatchSize, requestedCount), visibleHistoryRecords.length);
         for (let i = 0; i < initialCount; i++) {
-          fragment.append(createHistoryRow(visibleHistoryRecords[i]));
+          appendHistoryNode(createHistoryRow(visibleHistoryRecords[i]), renderedHistoryPrefixCount + i);
         }
         renderedHistoryCount = initialCount;
         history.replaceChildren(fragment);
@@ -3749,6 +3789,7 @@
         scheduleHistoryReveal(event.clientX, event.clientY);
       }, { passive: true });
       historyPanel.addEventListener("scroll", queueHistoryAppendCheck, { passive: true });
+      window.addEventListener("resize", queueHistoryRelayout, { passive: true });
       function updateSelectionUi() {
         const ids = visibleHistoryRecords.map(r => r.id).filter(Boolean);
         const allSel = ids.length > 0 && ids.every(id => selectedHistoryIds.has(id));
