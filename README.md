@@ -61,7 +61,7 @@ SYSTEMD_UNIT=image-cli
 启动服务：
 
 ```bash
-.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
 打开主页：
@@ -615,7 +615,7 @@ Type=simple
 User=root
 WorkingDirectory=/opt/image-cli
 Environment=PYTHONUNBUFFERED=1
-ExecStart=/opt/image-cli/.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+ExecStart=/opt/image-cli/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=3
 

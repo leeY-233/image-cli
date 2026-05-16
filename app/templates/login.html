@@ -188,6 +188,102 @@
       @media (max-width: 480px) {
         .card { padding: 28px 22px; gap: 22px; }
       }
+
+      /* Match the gallery-first studio theme used on the main page. */
+      :root {
+        --bg: #09090b;
+        --bg-card: rgba(24, 24, 27, 0.78);
+        --bg-input: rgba(255, 255, 255, 0.06);
+        --border: rgba(255, 255, 255, 0.09);
+        --border-hover: rgba(255, 255, 255, 0.18);
+        --border-focus: rgba(139, 92, 246, 0.72);
+        --text: #fafafa;
+        --text-secondary: #d4d4d8;
+        --text-muted: #71717a;
+        --accent: #8b5cf6;
+        --accent-light: #a78bfa;
+        --accent-glow: rgba(139, 92, 246, 0.18);
+        --accent-subtle: rgba(139, 92, 246, 0.15);
+        --danger: #f87171;
+      }
+      body {
+        background:
+          radial-gradient(circle at 16% 10%, rgba(139, 92, 246, 0.18), transparent 28rem),
+          radial-gradient(circle at 86% 18%, rgba(6, 182, 212, 0.12), transparent 24rem),
+          linear-gradient(135deg, #09090b 0%, #111113 55%, #09090b 100%);
+      }
+      body::before {
+        background-image:
+          linear-gradient(rgba(255,255,255,0.035) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px);
+        background-size: 34px 34px;
+        mask-image: linear-gradient(to bottom, #000, transparent 82%);
+      }
+      .orb-1 {
+        background: radial-gradient(circle, rgba(139, 92, 246, 0.18), transparent 68%);
+      }
+      .orb-2 {
+        background: radial-gradient(circle, rgba(6, 182, 212, 0.12), transparent 70%);
+      }
+      .card {
+        width: min(420px, calc(100vw - 36px));
+        padding: 38px 34px;
+        gap: 26px;
+        border-radius: 22px;
+        background: var(--bg-card);
+        border-color: var(--border);
+        box-shadow: 0 24px 90px rgba(0,0,0,0.48);
+        backdrop-filter: blur(20px) saturate(1.1);
+        -webkit-backdrop-filter: blur(20px) saturate(1.1);
+      }
+      .brand-icon {
+        width: 46px;
+        height: 46px;
+        border: 0;
+        border-radius: 14px;
+        background: linear-gradient(135deg, #8b5cf6, #06b6d4);
+        box-shadow: 0 18px 40px rgba(139, 92, 246, 0.28);
+      }
+      .brand-icon svg { color: #fff; }
+      h1 {
+        color: var(--text);
+        font-size: 22px;
+        font-weight: 800;
+      }
+      .brand p { color: var(--text-muted); }
+      .field label {
+        color: var(--text-muted);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+      input {
+        min-height: 46px;
+        border-radius: 14px;
+        background: var(--bg-input);
+        border-color: var(--border);
+        color: var(--text);
+      }
+      input:hover,
+      input:focus {
+        background: rgba(255, 255, 255, 0.08);
+      }
+      button {
+        min-height: 44px;
+        border-radius: 14px;
+        background: var(--accent);
+        font-weight: 800;
+        box-shadow: none;
+      }
+      button:hover {
+        background: var(--accent-light);
+        box-shadow: 0 18px 38px rgba(139, 92, 246, 0.28);
+      }
+      .footer {
+        color: var(--text-muted);
+        text-transform: uppercase;
+      }
     </style>
   </head>
   <body>

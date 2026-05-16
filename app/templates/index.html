@@ -58,6 +58,8 @@
       body {
         height: 100vh;
         overflow: hidden;
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
         background:
           radial-gradient(circle at 12% 12%, rgba(31, 122, 83, 0.16), transparent 28rem),
           radial-gradient(circle at 84% 8%, rgba(217, 119, 6, 0.14), transparent 26rem),
@@ -532,6 +534,7 @@
         background-size: 200% 100%;
         opacity: 0;
         transition: opacity 0.3s;
+        pointer-events: none;
       }
       .submit-btn:hover:not(:disabled) {
         transform: translateY(-2px);
@@ -1162,6 +1165,1250 @@
         .history-list { padding: 0 14px 8px; }
         .history-header { padding: 8px 14px 4px; }
       }
+
+      /* ─── Mockup v2 Gallery Shell ─── */
+      :root {
+        --bg: #09090b;
+        --bg-surface: #09090b;
+        --bg-card: rgba(24, 24, 27, 0.92);
+        --bg-solid-card: #18181b;
+        --bg-elevated: rgba(39, 39, 42, 0.82);
+        --bg-input: rgba(24, 24, 27, 0.88);
+        --border: rgba(255, 255, 255, 0.08);
+        --border-subtle: rgba(255, 255, 255, 0.06);
+        --border-hover: rgba(255, 255, 255, 0.16);
+        --border-focus: rgba(139, 92, 246, 0.6);
+        --text: #fafafa;
+        --text-secondary: #d4d4d8;
+        --text-dim: #a1a1aa;
+        --text-muted: #71717a;
+        --accent: #8b5cf6;
+        --accent-light: #a78bfa;
+        --accent-glow: rgba(139, 92, 246, 0.12);
+        --accent-subtle: rgba(139, 92, 246, 0.14);
+        --accent-warm: #f59e0b;
+        --danger: #ef4444;
+        --danger-bg: rgba(239, 68, 68, 0.1);
+        --danger-border: rgba(239, 68, 68, 0.28);
+        --success: #22c55e;
+        --success-bg: rgba(34, 197, 94, 0.11);
+        --shadow: 0 18px 60px rgba(0, 0, 0, 0.42);
+      }
+      body {
+        background: var(--bg);
+        color: var(--text);
+      }
+      body::before { display: none; }
+      .app {
+        height: 100vh;
+        height: 100dvh;
+        display: flex;
+        flex-direction: column;
+        gap: 0;
+        padding: 0;
+        background:
+          radial-gradient(circle at 12% 8%, rgba(139, 92, 246, 0.15), transparent 28rem),
+          radial-gradient(circle at 88% 18%, rgba(6, 182, 212, 0.12), transparent 24rem),
+          var(--bg);
+      }
+      .sidebar {
+        position: sticky;
+        top: 0;
+        height: 56px;
+        min-height: 56px;
+        overflow: visible;
+        flex: 0 0 56px;
+        border: 0;
+        border-bottom: 1px solid var(--border);
+        border-radius: 0;
+        box-shadow: none;
+        backdrop-filter: none;
+        background: rgba(9, 9, 11, 0.94);
+        z-index: 160;
+        animation: none;
+      }
+      .sidebar-header {
+        height: 56px;
+        padding: 0 20px;
+      }
+      .logo {
+        color: var(--text);
+        font-size: 15px;
+        letter-spacing: -0.02em;
+      }
+      .logo-icon {
+        width: 28px;
+        height: 28px;
+        border: 0;
+        border-radius: 8px;
+        background: linear-gradient(135deg, #8b5cf6, #06b6d4);
+      }
+      .logo-icon svg { color: #fff; width: 14px; height: 14px; }
+      .top-actions { gap: 8px; }
+      .icon-btn {
+        width: 34px;
+        height: 34px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--text-muted);
+      }
+      .icon-btn:hover {
+        background: var(--bg-solid-card);
+        color: var(--text-secondary);
+        transform: none;
+      }
+      .gen-form {
+        position: fixed;
+        left: 28px;
+        right: 28px;
+        bottom: 20px;
+        z-index: 80;
+        width: min(860px, calc(100vw - 56px));
+        max-height: min(56vh, 520px);
+        margin: 0 auto;
+        padding: 12px 14px;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+        overflow: auto;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: rgba(24, 24, 27, 0.94);
+        box-shadow: 0 18px 60px rgba(0, 0, 0, 0.48);
+        backdrop-filter: blur(18px);
+      }
+      .gen-form:focus-within {
+        border-color: var(--border-focus);
+        box-shadow: 0 18px 60px rgba(0, 0, 0, 0.48), 0 0 0 3px var(--accent-glow);
+      }
+      .gen-form .field {
+        order: 3;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .gen-form .field-label { display: none; }
+      .prompt-area {
+        order: 1;
+        flex: 1 1 100%;
+        min-height: 42px;
+        display: block;
+      }
+      .prompt-head {
+        position: absolute;
+        right: 62px;
+        top: 14px;
+        z-index: 2;
+      }
+      .prompt-head .field-label { display: none; }
+      #clearPrompt {
+        min-height: 32px;
+        background: transparent;
+      }
+      textarea[name="prompt"] {
+        min-height: 44px;
+        height: 44px;
+        max-height: 132px;
+        padding: 10px 92px 10px 2px;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: var(--text);
+        font-size: 14px;
+        resize: vertical;
+      }
+      textarea[name="prompt"]:hover,
+      textarea[name="prompt"]:focus {
+        background: transparent;
+        box-shadow: none;
+        border-color: transparent;
+      }
+      .submit-btn {
+        position: absolute;
+        right: 14px;
+        top: 12px;
+        width: 40px;
+        min-height: 40px;
+        padding: 0;
+        border-radius: 12px;
+        background: var(--accent);
+        box-shadow: none;
+        font-size: 0;
+      }
+      .submit-btn::before {
+        content: "→";
+        font-size: 18px;
+        line-height: 1;
+        pointer-events: none;
+      }
+      .submit-btn:hover:not(:disabled) {
+        background: var(--accent-light);
+        transform: scale(1.04);
+        box-shadow: none;
+      }
+      .mode-switch {
+        order: 3;
+        display: flex;
+        gap: 2px;
+        padding: 0;
+        border: 0;
+        background: transparent;
+      }
+      .mode-btn,
+      .seg-btn,
+      .ratio-btn,
+      .mini-btn,
+      .provider-select,
+      .count-input {
+        min-height: 31px;
+        border-radius: 9px;
+        border: 1px solid var(--border);
+        background: var(--bg-solid-card);
+        color: var(--text-dim);
+        box-shadow: none;
+      }
+      .mode-btn,
+      .seg-btn,
+      .ratio-btn {
+        flex: 0 0 auto;
+        padding: 6px 10px;
+        font-size: 12px;
+      }
+      .mode-btn.active,
+      .seg-btn.active,
+      .ratio-btn.active {
+        border-color: rgba(139, 92, 246, 0.36);
+        background: var(--accent-subtle);
+        color: var(--accent-light);
+      }
+      .ratio-grid {
+        display: flex;
+        gap: 6px;
+      }
+      .ratio-shape,
+      .resolution-hint,
+      .provider-note,
+      .custom-size-hint { display: none; }
+      .custom-size-row {
+        order: 3;
+        display: flex;
+      }
+      .custom-size-row[hidden] { display: none; }
+      .custom-size-input {
+        width: 92px;
+        min-height: 31px;
+        padding: 6px 9px;
+        border-radius: 9px;
+        background: var(--bg-solid-card);
+        color: var(--text);
+      }
+      .provider-select {
+        width: min(220px, 52vw);
+        padding: 6px 10px;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .count-row {
+        display: flex !important;
+        grid-template-columns: none;
+      }
+      .count-input {
+        width: 54px;
+        padding: 6px 8px;
+      }
+      .edit-fields {
+        order: 2;
+        flex: 1 1 100%;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        padding: 10px;
+        border-color: var(--border);
+        background: rgba(255, 255, 255, 0.03);
+      }
+      #form > .field:nth-of-type(1) { order: 3; }
+      #form > .field:nth-of-type(2) { order: 4; }
+      #form > .field.prompt-area { order: 1; }
+      #form > .field:nth-of-type(4) { order: 5; }
+      #resolutionField { order: 6; }
+      #form > .field:nth-of-type(6) { order: 7; }
+      #form > .field:nth-of-type(7) { order: 8; }
+      #form > .count-row { order: 9; }
+      .edit-fields[hidden] { display: none; }
+      .file-input {
+        min-height: 36px;
+        border-color: var(--border-hover);
+        background: rgba(255,255,255,0.04);
+        color: var(--text-dim);
+      }
+      .file-hint { display: none; }
+      .edit-preview {
+        grid-column: 1 / -1;
+        display: flex;
+        gap: 8px;
+        overflow-x: auto;
+      }
+      .edit-preview-card {
+        width: 82px;
+        min-width: 82px;
+        background: var(--bg-solid-card);
+      }
+      .workspace {
+        flex: 1 1 auto;
+        height: auto;
+        min-height: 0;
+        display: block;
+        overflow: hidden;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+        animation: none;
+      }
+      .topbar {
+        position: fixed;
+        top: 0;
+        right: 82px;
+        z-index: 120;
+        height: 56px;
+        padding: 0;
+        border: 0;
+      }
+      .topbar-title { display: none; }
+      .topbar-actions { display: none; }
+      .status-pill {
+        display: none;
+        min-height: 34px;
+        background: transparent;
+        border: 0;
+        color: var(--text-muted);
+      }
+      .status-pill:hover {
+        background: var(--bg-solid-card);
+        color: var(--text-secondary);
+        transform: none;
+      }
+      .result-area {
+        position: absolute;
+        inset: 80px 28px 112px;
+        z-index: 35;
+        min-height: 0;
+        overflow: visible;
+        padding: 0;
+        display: grid;
+        align-items: start;
+        justify-items: center;
+        pointer-events: none;
+      }
+      .result-area > * { pointer-events: auto; }
+      .result-area > .empty-state { display: none; }
+      .result-grid {
+        width: min(960px, 100%);
+        height: auto;
+        grid-auto-rows: auto;
+        align-items: start;
+      }
+      .result-card {
+        max-height: min(64vh, 680px);
+        background: var(--bg-card);
+        border-color: var(--border);
+        box-shadow: var(--shadow);
+      }
+      .result-card img {
+        max-height: min(55vh, 580px);
+        background: #111;
+      }
+      .result-card-footer {
+        background: rgba(24,24,27,0.94);
+      }
+      .loader-state,
+      .error-box,
+      .result-area > .empty-state {
+        width: min(520px, calc(100vw - 48px));
+        min-height: 164px;
+        padding: 22px;
+        border-radius: 18px;
+        background: rgba(24, 24, 27, 0.88);
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(16px);
+      }
+      .history-panel {
+        position: absolute;
+        inset: 0;
+        min-height: 0;
+        display: block;
+        border: 0;
+        background: transparent;
+        overflow-y: auto;
+        overflow-x: hidden;
+      }
+      .history-resize { display: none; }
+      .history-header {
+        position: sticky;
+        top: 0;
+        z-index: 20;
+        height: 46px;
+        padding: 8px 28px;
+        background: linear-gradient(to bottom, rgba(9,9,11,0.72), rgba(9,9,11,0.42), transparent);
+      }
+      .history-header h3 {
+        color: var(--text-secondary);
+        font-size: 13px;
+      }
+      .history-header h3::first-letter {
+        text-transform: uppercase;
+      }
+      .history-list {
+        height: auto;
+        min-height: calc(100vh - 52px);
+        display: block;
+        columns: 4 220px;
+        column-gap: 14px;
+        overflow: visible;
+        padding: 10px 28px calc(20vh + 52px);
+      }
+      .history-list.selecting .history-check,
+      .selecting .history-check { visibility: visible; }
+      .history-row {
+        container-type: inline-size;
+        break-inside: avoid;
+        position: relative;
+        display: block;
+        width: 100%;
+        min-width: 0;
+        margin: 0 0 14px;
+        padding: 0;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 13px;
+        background: var(--bg-solid-card);
+        cursor: pointer;
+        transition: transform 0.18s, border-color 0.18s, box-shadow 0.18s;
+      }
+      .history-row:hover {
+        border-color: var(--border-hover);
+        transform: translateY(-2px);
+        box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+      }
+      .history-thumb,
+      .history-placeholder {
+        width: 100%;
+        display: block;
+        background: linear-gradient(135deg, #27272a, #18181b);
+      }
+      .history-thumb {
+        height: auto;
+      }
+      .history-placeholder {
+        min-height: 180px;
+        display: grid;
+        place-items: center;
+        color: var(--text-muted);
+        font: 700 12px var(--font-mono);
+      }
+      .history-info {
+        position: absolute;
+        inset: auto 0 0;
+        display: grid;
+        gap: 7px;
+        padding:
+          clamp(40px, 18cqw, 48px)
+          clamp(9px, 4cqw, 14px)
+          calc(clamp(24px, 12cqw, 28px) + clamp(18px, 7cqw, 26px));
+        background: linear-gradient(to top, rgba(0,0,0,0.78), transparent);
+        opacity: 0;
+        transition: opacity 0.18s;
+      }
+      .history-row:hover .history-info,
+      .history-row.is-revealed .history-info { opacity: 1; }
+      .history-prompt {
+        color: rgba(255,255,255,0.88);
+        font-size: 12px;
+        line-height: 1.4;
+        white-space: normal;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+      }
+      .history-detail {
+        color: rgba(255,255,255,0.52);
+        font-size: 10px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .history-row-actions {
+        position: absolute;
+        left: clamp(7px, 4cqw, 12px);
+        right: clamp(7px, 4cqw, 12px);
+        bottom: clamp(7px, 4cqw, 12px);
+        z-index: 3;
+        width: auto;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: clamp(3px, 2cqw, 6px);
+        opacity: 0;
+        transition: opacity 0.18s;
+      }
+      .history-row:hover .history-row-actions,
+      .history-row.is-revealed .history-row-actions { opacity: 1; }
+      .history-job-row {
+        cursor: default;
+        aspect-ratio: var(--job-aspect, 3 / 4);
+        min-height: 190px;
+        position: relative;
+        display: block;
+        text-align: center;
+        border-style: solid;
+        border-color: rgba(139, 92, 246, 0.28);
+        background:
+          radial-gradient(circle at 50% 32%, rgba(139, 92, 246, 0.18), transparent 30%),
+          linear-gradient(145deg, rgba(39,39,42,0.92), rgba(10,10,12,0.96));
+      }
+      .history-job-row:hover {
+        background:
+          radial-gradient(circle at 50% 32%, rgba(139, 92, 246, 0.18), transparent 30%),
+          linear-gradient(145deg, rgba(39,39,42,0.92), rgba(10,10,12,0.96));
+        border-color: rgba(139, 92, 246, 0.28);
+        transform: none;
+        box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
+      }
+      .job-frame-content {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        padding: 18px;
+      }
+      .job-frame-inner {
+        display: grid;
+        justify-items: center;
+        gap: 10px;
+        width: min(180px, calc(100% - 24px));
+        margin: auto;
+        text-align: center;
+      }
+      .job-frame-title {
+        color: var(--text-secondary);
+        font-size: 13px;
+        font-weight: 850;
+      }
+      .job-frame-sub {
+        max-width: 180px;
+        color: var(--text-muted);
+        font: 10px/1.45 var(--font-mono);
+        overflow-wrap: anywhere;
+      }
+      .job-frame-progress {
+        color: var(--accent-light);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .job-frame-actions {
+        display: flex;
+        gap: 7px;
+        align-items: center;
+        justify-content: center;
+      }
+      .history-view,
+      .history-edit,
+      .history-reuse,
+      .history-delete {
+        flex: 1 1 0;
+        width: auto;
+        min-width: 0;
+        height: clamp(24px, 12cqw, 28px);
+        padding: 0 clamp(4px, 3cqw, 10px);
+        border-color: rgba(255,255,255,0.13);
+        border-radius: 999px;
+        background: rgba(255,255,255,0.12);
+        color: #fff;
+        font-size: clamp(9px, 4.1cqw, 10.5px);
+        font-weight: 800;
+        line-height: 1;
+        backdrop-filter: blur(8px);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .history-delete {
+        flex: 0 0 clamp(26px, 13cqw, 28px);
+        width: clamp(26px, 13cqw, 28px);
+        min-width: 0;
+        padding: 0;
+        color: #fecaca;
+      }
+      .history-check {
+        position: absolute;
+        top: 10px;
+        left: 10px;
+        z-index: 4;
+      }
+      .jobs-popover {
+        position: fixed;
+        top: 56px;
+        right: 18px;
+        background: var(--bg-card);
+        box-shadow: var(--shadow);
+      }
+      .modal-overlay {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: clamp(10px, 1.5vw, 18px);
+        padding: clamp(14px, 2vw, 28px);
+        background: rgba(0, 0, 0, 0.42);
+        backdrop-filter: blur(14px) saturate(1.08);
+        -webkit-backdrop-filter: blur(14px) saturate(1.08);
+      }
+      .modal-image-wrap {
+        flex: 0 1 auto;
+        width: auto;
+        height: auto;
+        max-width: min(72vw, 1120px);
+        max-height: min(88dvh, 900px);
+        padding: 0;
+        overflow: visible;
+        border-radius: 16px;
+        background: rgba(24, 24, 27, 0.36);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.36);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+      }
+      .modal-image-wrap img {
+        width: auto;
+        height: auto;
+        max-width: min(72vw, 1120px);
+        max-height: min(88dvh, 900px);
+        border-radius: 15px;
+      }
+      .modal-info {
+        flex: 0 1 clamp(280px, 24vw, 420px);
+        width: clamp(280px, 24vw, 420px);
+        max-height: min(88dvh, 760px);
+        min-height: 0;
+        align-self: center;
+        grid-template-rows: auto auto minmax(80px, auto) auto;
+        overflow: hidden;
+        border-radius: 18px;
+        background: rgba(24, 24, 27, 0.58);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: 0 24px 80px rgba(0, 0, 0, 0.32);
+        backdrop-filter: blur(18px);
+        -webkit-backdrop-filter: blur(18px);
+      }
+      .modal-prompt {
+        max-height: min(46dvh, 430px);
+        overflow-y: auto;
+        background: rgba(17, 17, 19, 0.74);
+        color: var(--text-secondary);
+      }
+      .modal-actions {
+        min-width: 0;
+        max-width: 100%;
+      }
+      .modal-actions .mini-btn {
+        min-width: 0;
+        text-align: center;
+        text-decoration: none;
+      }
+      @media (max-width: 1024px) {
+        .history-list { columns: 3 190px; }
+      }
+      @media (max-width: 760px) {
+        .sidebar {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          width: 100%;
+          z-index: 180;
+          transform: none;
+        }
+        .workspace {
+          padding-top: 56px;
+        }
+        .history-panel {
+          top: 56px;
+        }
+        .gen-form {
+          left: 12px;
+          right: 12px;
+          bottom: 12px;
+          width: calc(100vw - 24px);
+          max-height: 64vh;
+        }
+        .history-list {
+          columns: 2 150px;
+          padding: 14px 14px 132px;
+        }
+        .topbar { right: 112px; }
+        .edit-fields { grid-template-columns: 1fr; }
+        .modal-overlay {
+          flex-direction: column;
+          justify-content: center;
+          padding: 12px;
+          gap: 10px;
+        }
+        .modal-image-wrap,
+        .modal-image-wrap img {
+          max-width: calc(100vw - 24px);
+          max-height: 58dvh;
+        }
+        .modal-info {
+          width: min(460px, calc(100vw - 24px));
+          max-height: 38dvh;
+          border-radius: 16px;
+          grid-template-rows: auto auto minmax(0, 1fr) auto;
+        }
+        .modal-prompt {
+          max-height: 14dvh;
+        }
+        .modal-actions {
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          gap: 6px;
+          max-height: 84px;
+          overflow-y: auto;
+          overscroll-behavior: contain;
+        }
+        .modal-actions .mini-btn {
+          width: 100%;
+          min-height: 34px;
+          padding: 7px 8px;
+          font-size: 11px;
+        }
+      }
+      @media (max-width: 900px), (pointer: coarse) {
+        .sidebar {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          width: 100%;
+          z-index: 180;
+          transform: none;
+        }
+        .workspace {
+          padding-top: 56px;
+        }
+        .history-panel {
+          top: 56px;
+        }
+      }
+      @media (hover: none), (pointer: coarse) {
+        .history-row:hover {
+          transform: none;
+        }
+      }
+
+      .gen-form {
+        bottom: 6px;
+        left: 20px;
+        right: 20px;
+        width: min(1240px, calc(100vw - 40px));
+        height: var(--composer-height, auto);
+        max-height: 42vh;
+        padding: 12px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 44px 44px;
+        grid-template-rows: minmax(78px, 1fr) 32px;
+        align-items: center;
+        gap: 7px 10px;
+        overflow: visible;
+        transition: none;
+      }
+      .composer-resize-handle {
+        position: absolute;
+        top: -7px;
+        left: 18px;
+        right: 18px;
+        height: 16px;
+        z-index: 6;
+        cursor: ns-resize;
+        touch-action: none;
+      }
+      .composer-resize-handle::before {
+        content: "";
+        position: absolute;
+        left: 50%;
+        top: 6px;
+        width: 64px;
+        height: 3px;
+        border-radius: 99px;
+        background: rgba(167, 139, 250, 0.34);
+        transform: translateX(-50%);
+        opacity: 0;
+        transition: opacity 0.15s, background 0.15s;
+      }
+      .composer-resize-handle:hover::before,
+      .gen-form.resizing .composer-resize-handle::before {
+        opacity: 1;
+        background: rgba(167, 139, 250, 0.8);
+      }
+      #modeField,
+      #aspectField,
+      #resolutionField,
+      #qualityField,
+      #formatField,
+      #countField,
+      .custom-size-row,
+      .custom-size-hint,
+      .resolution-hint {
+        position: absolute !important;
+        width: 1px !important;
+        height: 1px !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        overflow: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+      }
+      .gen-form > .field {
+        min-width: 0;
+      }
+      .gen-form > .prompt-area {
+        display: block !important;
+        grid-column: 1 / 2;
+        grid-row: 1;
+        position: relative;
+        z-index: 2;
+        min-height: 0;
+        height: 100%;
+        opacity: 1 !important;
+        overflow: visible !important;
+        pointer-events: auto !important;
+      }
+      .prompt-head {
+        display: none;
+      }
+      #clearPrompt {
+        grid-column: 2;
+        grid-row: 1;
+        position: relative;
+        z-index: 4;
+        align-self: start;
+        justify-self: end;
+        width: 40px;
+        min-height: 40px;
+        padding: 0;
+        border-radius: 12px;
+        background: rgba(139, 92, 246, 0.18);
+        color: #fff;
+        font-size: 0;
+        touch-action: manipulation;
+        -webkit-tap-highlight-color: transparent;
+      }
+      #clearPrompt svg { width: 18px; height: 18px; }
+      #clearPrompt:hover {
+        background: rgba(139, 92, 246, 0.26);
+        transform: none;
+      }
+      textarea[name="prompt"] {
+        display: block !important;
+        height: 100%;
+        min-height: 48px;
+        max-height: 240px;
+        padding: 10px 4px;
+        resize: none;
+        cursor: text;
+        caret-color: var(--accent-light);
+        transition: none;
+      }
+      textarea[name="prompt"]:hover,
+      textarea[name="prompt"]:focus {
+        background: transparent;
+        box-shadow: none;
+        border-color: transparent;
+        cursor: text;
+      }
+      .compact-controls {
+        display: block !important;
+        position: fixed;
+        left: 50%;
+        bottom: 14px;
+        z-index: 105;
+        width: min(1240px, calc(100vw - 40px));
+        min-width: 0;
+        max-width: 100%;
+        transform: translateX(-50%);
+        overflow-x: auto;
+        overflow-y: hidden;
+        padding: 0 4px 6px;
+        scroll-behavior: auto;
+        overscroll-behavior-x: contain;
+        -webkit-overflow-scrolling: touch;
+        touch-action: pan-x;
+        pointer-events: auto;
+        user-select: none;
+        scrollbar-width: none;
+        scrollbar-color: rgba(167, 139, 250, 0.55) transparent;
+      }
+      .compact-track {
+        width: max-content;
+        min-width: min-content;
+        max-width: none;
+        margin-inline: auto;
+        display: flex;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 6px;
+      }
+      .compact-controls::-webkit-scrollbar {
+        height: 0;
+      }
+      .compact-controls::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .compact-controls::-webkit-scrollbar-thumb {
+        border-radius: 999px;
+        background: transparent;
+      }
+      .compact-controls.is-scrolling {
+        scrollbar-width: thin;
+      }
+      .compact-controls.is-scrolling::-webkit-scrollbar {
+        height: 6px;
+      }
+      .compact-controls.is-scrolling::-webkit-scrollbar-thumb {
+        background: rgba(167, 139, 250, 0.55);
+      }
+      .compact-controls.has-overflow {
+        scroll-behavior: auto;
+      }
+      .compact-controls.has-overflow .compact-track {
+        margin-inline: 0;
+      }
+      .compact-controls label {
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        min-height: 31px;
+        padding: 0 6px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: rgba(255,255,255,0.04);
+        color: var(--text-muted);
+        font-size: 10px;
+        font-weight: 750;
+        line-height: 1;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        transition: none;
+      }
+      .compact-controls label:hover {
+        border-color: var(--border);
+        background: rgba(255,255,255,0.04);
+      }
+      .compact-controls select {
+        min-height: 24px;
+        border: 0;
+        outline: none;
+        background: transparent;
+        color: var(--text-secondary);
+        font-size: 12px;
+        font-weight: 800;
+        line-height: 1;
+        text-transform: none;
+        cursor: pointer;
+        transition: none;
+      }
+      .compact-controls select:hover,
+      .compact-controls select:focus {
+        background: transparent;
+        box-shadow: none;
+      }
+      .compact-controls option {
+        background: #18181b;
+        color: #fafafa;
+      }
+      .compact-upload {
+        cursor: pointer;
+      }
+      #uploadSummary {
+        display: block;
+        position: relative;
+        width: 128px;
+        min-height: 31px;
+        padding: 0 8px 0 20px;
+        border: 1px solid rgba(167, 139, 250, 0.28);
+        border-radius: 10px;
+        background: rgba(139, 92, 246, 0.12);
+        color: var(--accent-light);
+        font-size: 11px;
+        font-weight: 800;
+        line-height: 29px;
+        text-transform: none;
+        letter-spacing: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        cursor: pointer;
+      }
+      #uploadSummary::before {
+        content: "";
+        position: absolute;
+        left: 8px;
+        top: 50%;
+        width: 6px;
+        height: 6px;
+        border-radius: 99px;
+        background: var(--accent-light);
+        box-shadow: 0 0 12px rgba(167, 139, 250, 0.7);
+        transform: translateY(-50%);
+      }
+      #uploadSummary[hidden] {
+        display: none;
+      }
+      .compact-custom-size {
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        min-height: 31px;
+        padding: 0 6px;
+        border: 1px solid rgba(167, 139, 250, 0.28);
+        border-radius: 10px;
+        background: rgba(139, 92, 246, 0.12);
+        color: var(--accent-light);
+      }
+      .compact-custom-size[hidden] {
+        display: none;
+      }
+      .compact-custom-size input {
+        width: 64px;
+        min-height: 24px;
+        border: 0;
+        border-radius: 7px;
+        background: rgba(255,255,255,0.06);
+        color: var(--text-secondary);
+        font-size: 12px;
+        font-weight: 800;
+        text-align: center;
+        outline: none;
+      }
+      .compact-custom-size input.invalid {
+        color: #fecaca;
+        background: rgba(239, 68, 68, 0.16);
+      }
+      .compact-custom-sep {
+        color: var(--text-muted);
+        font-size: 11px;
+        font-weight: 900;
+      }
+      .provider-select {
+        width: min(112px, 24vw);
+        min-width: 104px;
+        max-width: 112px;
+      }
+      #providerField {
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+      }
+      #providerField .provider-note {
+        display: none;
+      }
+      .edit-fields {
+        position: absolute !important;
+        width: 1px !important;
+        height: 1px !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        border: 0 !important;
+        overflow: hidden !important;
+        opacity: 0 !important;
+        pointer-events: auto !important;
+        display: block !important;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        background: transparent;
+      }
+      .edit-fields > .field {
+        position: absolute !important;
+        width: 1px !important;
+        height: 1px !important;
+        opacity: 0 !important;
+        overflow: hidden !important;
+        pointer-events: none !important;
+      }
+      .edit-preview {
+        display: none !important;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 6px;
+        max-width: 290px;
+        overflow-x: auto;
+        overflow-y: visible;
+        padding: 1px;
+      }
+      .edit-preview:empty { display: none !important; }
+      .edit-preview-card {
+        width: 32px;
+        min-width: 32px;
+        border-radius: 9px;
+      }
+      .edit-preview-card img {
+        height: 32px;
+        aspect-ratio: 1;
+        object-fit: cover;
+      }
+      .edit-preview-card span { display: none; }
+      .edit-preview-remove {
+        top: -5px;
+        right: -5px;
+        width: 18px;
+        height: 18px;
+        z-index: 5;
+        background: rgba(24,24,27,0.92);
+        color: #fecaca;
+        border-color: var(--danger-border);
+        pointer-events: auto;
+      }
+      #submit {
+        grid-column: 3;
+        grid-row: 1;
+        position: static;
+        z-index: 4;
+        justify-self: end;
+        align-self: start;
+        width: 40px;
+        min-height: 40px;
+      }
+      .history-panel {
+        overscroll-behavior: contain;
+      }
+      .history-list {
+        height: auto;
+        min-height: calc(100dvh - 52px);
+        overflow: visible !important;
+        padding-bottom: calc(17vh + 54px);
+      }
+      .history-thumb {
+        image-rendering: auto;
+      }
+      .result-area {
+        inset: 72px 28px calc(17vh + 42px);
+      }
+      @media (max-width: 760px) {
+        body,
+        .app {
+          height: 100dvh;
+        }
+        button,
+        input,
+        select,
+        textarea {
+          touch-action: manipulation;
+          -webkit-tap-highlight-color: transparent;
+        }
+        input,
+        select,
+        textarea,
+        .compact-controls select,
+        .provider-select,
+        .count-input,
+        .custom-size-input {
+          font-size: 16px !important;
+        }
+        .topbar {
+          right: 112px;
+        }
+        .sidebar {
+          position: fixed;
+          top: 0;
+          left: 0;
+          right: 0;
+          width: 100%;
+          z-index: 180;
+          transform: none;
+        }
+        .workspace {
+          padding-top: 56px;
+        }
+        .history-panel {
+          top: 56px;
+        }
+        .gen-form {
+          left: 10px;
+          right: 10px;
+          bottom: max(10px, env(safe-area-inset-bottom));
+          width: calc(100vw - 20px);
+          max-height: 48vh;
+          grid-template-columns: minmax(0, 1fr) 40px 40px;
+          grid-template-rows: minmax(76px, 1fr) 32px;
+          padding: 10px;
+        }
+        .compact-controls {
+          bottom: 17px;
+          width: calc(100vw - 40px);
+          touch-action: pan-x;
+        }
+        .compact-controls label {
+          min-height: 36px;
+          gap: 5px;
+          padding: 0 8px;
+          font-size: 9px;
+          line-height: 1;
+          letter-spacing: 0.035em;
+        }
+        .compact-controls select {
+          min-height: 32px;
+          appearance: none;
+          -webkit-appearance: none;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0 16px 0 4px;
+          border-radius: 8px;
+          line-height: 1;
+          transform: scale(0.74);
+          transform-origin: center;
+          margin: 0 -10px;
+          text-align: center;
+          text-align-last: center;
+          background:
+            linear-gradient(45deg, transparent 50%, var(--text-muted) 50%) calc(100% - 8px) 52% / 5px 5px no-repeat,
+            linear-gradient(135deg, var(--text-muted) 50%, transparent 50%) calc(100% - 4px) 52% / 5px 5px no-repeat;
+        }
+        #ratioSelect {
+          width: 84px;
+        }
+        .compact-custom-size {
+          min-height: 36px;
+        }
+        .compact-custom-size input {
+          width: 58px;
+          min-height: 30px;
+        }
+        .history-list {
+          columns: 2 150px;
+          min-height: calc(100dvh - 52px);
+          padding: 14px 12px calc(17vh + 56px);
+        }
+        .provider-select {
+          width: min(116px, 34vw);
+        }
+        #uploadSummary {
+          width: 112px;
+        }
+        textarea[name="prompt"] {
+          min-height: 50px;
+          line-height: 1.35;
+        }
+      }
     </style>
   </head>
   <body>
@@ -1189,19 +2436,15 @@
           </div>
         </div>
         <form class="gen-form" id="form">
-          <div class="field">
+          <div class="composer-resize-handle" id="composerResize" aria-hidden="true"></div>
+          <div class="field" id="modeField">
             <div class="field-label">Mode</div>
             <div class="mode-switch" id="modeSwitch">
               <button class="mode-btn active" type="button" data-mode="generate">Generate</button>
               <button class="mode-btn" type="button" data-mode="edit">Edit</button>
             </div>
           </div>
-          <div class="field">
-            <div class="field-label">Provider</div>
-            <select class="provider-select" id="providerSelect" title="Loading providers..."></select>
-            <div class="provider-note" id="providerNote">Loading providers...</div>
-          </div>
-          <div class="edit-fields" id="editFields" hidden>
+          <div class="edit-fields" id="editFields">
             <div class="field">
               <div class="field-label">Source Image</div>
               <input class="file-input" id="editImageInput" type="file" accept="image/png,image/jpeg,image/webp" multiple />
@@ -1217,11 +2460,10 @@
           <div class="field prompt-area">
             <div class="prompt-head">
               <div class="field-label">Prompt</div>
-              <button class="mini-btn" id="clearPrompt" type="button">Clear</button>
             </div>
             <textarea name="prompt" placeholder="Describe the image you want to create..." required></textarea>
           </div>
-          <div class="field">
+          <div class="field" id="aspectField">
             <div class="field-label">Aspect Ratio</div>
             <div class="ratio-grid" id="ratioGrid">
               <button type="button" class="ratio-btn active" data-ratio="1:1">
@@ -1261,7 +2503,7 @@
               <button type="button" class="seg-btn" data-value="4k">4K</button>
             </div>
           </div>
-          <div class="field">
+          <div class="field" id="qualityField">
             <div class="field-label">Quality</div>
             <div class="segmented" id="qualitySeg">
               <button type="button" class="seg-btn active" data-value="auto">auto</button>
@@ -1270,7 +2512,7 @@
               <button type="button" class="seg-btn" data-value="low">low</button>
             </div>
           </div>
-          <div class="field">
+          <div class="field" id="formatField">
             <div class="field-label">Format</div>
             <div class="segmented" id="outputFormatSeg">
               <button type="button" class="seg-btn active" data-value="png">png</button>
@@ -1278,12 +2520,86 @@
               <button type="button" class="seg-btn" data-value="webp">webp</button>
             </div>
           </div>
-          <div class="field count-row">
+          <div class="field count-row" id="countField">
             <div><div class="field-label">Count</div></div>
-            <input class="count-input" name="n" type="number" min="1" max="10" value="1" />
+            <input class="count-input" name="n" type="number" min="1" max="5" value="1" />
           </div>
+          <button class="mini-btn" id="clearPrompt" type="button" title="Clear prompt and uploaded sources" aria-label="Clear prompt and uploaded sources">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path d="m15 4 5 5"/>
+              <path d="M13.5 5.5 4 15l5 5 9.5-9.5"/>
+              <path d="M4 15c-1 2-1 3.7 0 5"/>
+              <path d="M9 20c1.6.6 3.2.5 5-.2"/>
+              <path d="m6.5 12.5 5 5"/>
+            </svg>
+          </button>
           <button class="submit-btn" id="submit" type="submit">Generate</button>
         </form>
+        <div class="compact-controls" id="compactControls">
+          <div class="compact-track" id="compactTrack">
+            <label class="compact-upload">
+              Upload
+            </label>
+            <button class="compact-source-chip" id="uploadSummary" type="button" title="Uploaded source image. Click to clear." hidden></button>
+            <label>
+              Ratio
+              <select id="ratioSelect">
+                <option value="1:1">1:1</option>
+                <option value="3:4" selected>3:4</option>
+                <option value="4:3">4:3</option>
+                <option value="9:16">9:16</option>
+                <option value="16:9">16:9</option>
+                <option value="21:9">21:9</option>
+                <option value="custom">Custom</option>
+              </select>
+            </label>
+            <div class="compact-custom-size" id="compactCustomSize" hidden>
+              <input id="compactCustomWidth" type="number" min="16" max="4096" step="16" value="1024" aria-label="Custom width" />
+              <span class="compact-custom-sep">x</span>
+              <input id="compactCustomHeight" type="number" min="16" max="4096" step="16" value="1024" aria-label="Custom height" />
+            </div>
+            <label id="compactResolutionField">
+              Resolution
+              <select id="resolutionSelect">
+                <option value="1k">1K</option>
+                <option value="2k" selected>2K</option>
+                <option value="4k">4K</option>
+              </select>
+            </label>
+            <label>
+              Quality
+              <select id="qualitySelect">
+                <option value="auto" selected>auto</option>
+                <option value="high">high</option>
+                <option value="medium">medium</option>
+                <option value="low">low</option>
+              </select>
+            </label>
+            <label>
+              Format
+              <select id="formatSelect">
+                <option value="png" selected>PNG</option>
+                <option value="jpeg">JPEG</option>
+                <option value="webp">WebP</option>
+              </select>
+            </label>
+            <label>
+              Count
+              <select id="countSelect">
+                <option value="1" selected>1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+              </select>
+            </label>
+            <label id="providerField">
+              Provider
+              <select class="provider-select" id="providerSelect" title="Loading providers..."></select>
+              <span class="provider-note" id="providerNote">Loading providers...</span>
+            </label>
+          </div>
+        </div>
       </aside>
 
       <section class="workspace">
@@ -1322,7 +2638,7 @@
         <section class="history-panel" id="historyPanel">
           <div class="history-resize" id="historyResize"></div>
           <div class="history-header">
-            <h3>History <span>last 50 records</span></h3>
+            <h3>Gallery <span>all results</span></h3>
             <div class="history-actions">
               <span class="history-count" id="historyCount">--</span>
               <button class="mini-btn" id="selectAllHistory" type="button" hidden>Select All</button>
@@ -1382,6 +2698,7 @@
       const submit = document.querySelector("#submit");
       const promptInput = form.elements.prompt;
       const clearPrompt = document.querySelector("#clearPrompt");
+      const composerResize = document.querySelector("#composerResize");
       const ratioGrid = document.querySelector("#ratioGrid");
       const resolutionField = document.querySelector("#resolutionField");
       const resolutionSeg = document.querySelector("#resolutionSeg");
@@ -1411,6 +2728,17 @@
       const editImageInput = document.querySelector("#editImageInput");
       const editMaskInput = document.querySelector("#editMaskInput");
       const editPreview = document.querySelector("#editPreview");
+      const compactControls = document.querySelector("#compactControls");
+      const ratioSelect = document.querySelector("#ratioSelect");
+      const resolutionSelect = document.querySelector("#resolutionSelect");
+      const qualitySelect = document.querySelector("#qualitySelect");
+      const formatSelect = document.querySelector("#formatSelect");
+      const countSelect = document.querySelector("#countSelect");
+      const uploadSummary = document.querySelector("#uploadSummary");
+      const compactCustomSize = document.querySelector("#compactCustomSize");
+      const compactCustomWidth = document.querySelector("#compactCustomWidth");
+      const compactCustomHeight = document.querySelector("#compactCustomHeight");
+      const compactResolutionField = document.querySelector("#compactResolutionField");
 
       const sizeRatioMap = {
         "1024x1024": "1:1", "2048x2048": "1:1", "2880x2880": "1:1",
@@ -1430,22 +2758,24 @@
       };
       let activeHistoryRecord = null;
       let selectingHistory = false;
-      let selectedHistoryMode = "generate";
+      let selectedHistoryMode = "all";
       let allHistoryRecords = [];
       let visibleHistoryRecords = [];
       const selectedHistoryIds = new Set();
       const backgroundJobs = new Map();
+      const pendingHistoryJobs = new Map();
       let timer = null;
       let activePollToken = 0;
       let watchedJobId = null;
       let watchedJob = null;
       let jobsRefreshTimer = null;
       const historyHeightKey = "imageCliHistoryHeight_v2";
+      const composerHeightKey = "imageCliComposerHeight_v1";
       const modeStorageKey = "imageCliMode_v1";
       const providerStorageKey = "imageCliProviderId_v1";
 
-      let selectedRatio = "1:1";
-      let selectedResolution = "1k";
+      let selectedRatio = "3:4";
+      let selectedResolution = "2k";
       let selectedSize = resolutionSizeMap[selectedRatio][selectedResolution];
       let selectedQuality = "auto";
       let selectedOutputFormat = "png";
@@ -1462,6 +2792,52 @@
       function setSelectedSizeFromControls() {
         selectedSize = resolveSelectedSize();
         sizePreview.textContent = selectedSize;
+      }
+      function syncCompactControls() {
+        if (ratioSelect) ratioSelect.value = selectedRatio;
+        if (resolutionSelect) resolutionSelect.value = selectedResolution;
+        if (qualitySelect) qualitySelect.value = selectedQuality;
+        if (formatSelect) formatSelect.value = selectedOutputFormat;
+        if (countSelect) countSelect.value = String(form.querySelector('[name="n"]').value || "1");
+        if (compactCustomSize) compactCustomSize.hidden = !isCustomSizeSelected();
+        if (compactResolutionField) compactResolutionField.hidden = isCustomSizeSelected();
+        if (compactCustomWidth && compactCustomWidth.value !== customWidth.value) compactCustomWidth.value = customWidth.value;
+        if (compactCustomHeight && compactCustomHeight.value !== customHeight.value) compactCustomHeight.value = customHeight.value;
+        if (uploadSummary) {
+          const sourceCount = editSourceFiles.length;
+          uploadSummary.hidden = !sourceCount;
+          if (sourceCount) {
+            const firstName = editSourceFiles[0]?.name || "source image";
+            uploadSummary.textContent = sourceCount > 1 ? `${firstName} +${sourceCount - 1}` : firstName;
+            uploadSummary.title = `${editSourceFiles.map(file => file.name).join("\n")}\nClick to clear uploaded sources.`;
+          } else {
+            uploadSummary.textContent = "";
+            uploadSummary.title = "No uploaded source image.";
+          }
+        }
+        requestAnimationFrame(updateCompactOverflow);
+      }
+      function updateCompactOverflow() {
+        if (!compactControls) return;
+        const hasOverflow = compactHasOverflow();
+        compactControls.classList.toggle("has-overflow", hasOverflow);
+        if (!hasOverflow) {
+          compactControls.classList.remove("is-scrolling");
+          compactControls.scrollLeft = 0;
+        }
+      }
+      function revealCompactCustomSize() {
+        if (!compactCustomSize || compactCustomSize.hidden) return;
+        requestAnimationFrame(() => {
+          compactCustomSize.scrollIntoView({ block: "nearest", inline: "nearest" });
+          updateCompactOverflow();
+        });
+      }
+      function compactHasOverflow() {
+        if (!compactControls) return false;
+        const track = compactControls.querySelector(".compact-track");
+        const trackWidth = track ? track.scrollWidth : compactControls.scrollWidth;
+        return trackWidth > compactControls.clientWidth + 1;
       }
       function setCustomSizePreview() {
         sizePreview.textContent = `${customWidth.value || "-"}x${customHeight.value || "-"}`;
@@ -1486,6 +2862,7 @@
           customSizeRow.hidden = true;
           resolutionField.hidden = false;
           setSelectedSizeFromControls();
+          syncCompactControls();
           return;
         }
         const customMatch = /^(\d+)x(\d+)$/.exec(size || "");
@@ -1499,6 +2876,7 @@
         selectedSize = size;
         setCustomSizePreview();
         validateCustomSize(false);
+        syncCompactControls();
       }
       function applyHistoryOptions(record) {
         setMode(record.operation === "edit" ? "edit" : "generate");
@@ -1556,12 +2934,12 @@
         modeSwitch.querySelectorAll(".mode-btn").forEach(btn => {
           btn.classList.toggle("active", btn.dataset.mode === selectedMode);
         });
-        editFields.hidden = selectedMode !== "edit";
+        editFields.hidden = false;
         submit.textContent = selectedMode === "edit" ? "Edit Image" : "Generate";
-        promptInput.placeholder = selectedMode === "edit"
+        promptInput.placeholder = editSourceFiles.length
           ? "Describe how to edit the uploaded image..."
           : "Describe the image you want to create...";
-        setHistoryMode(selectedMode);
+        setHistoryMode("all");
         if (!timer && !watchedJobId) refreshIdleStatus();
       }
       function clearEditPreviews() {
@@ -1583,12 +2961,16 @@
         }
         syncEditImageInput();
         renderEditPreviews();
+        if (editSourceFiles.length) setMode("edit");
+        syncCompactControls();
       }
       function removeEditSourceFile(index) {
         editSourceFiles.splice(index, 1);
         editSourceOrigin = null;
         syncEditImageInput();
         renderEditPreviews();
+        if (!editSourceFiles.length) setMode("generate");
+        syncCompactControls();
       }
       function clearEditInputs() {
         editSourceFiles = [];
@@ -1597,6 +2979,8 @@
         editImageInput.value = "";
         editMaskInput.value = "";
         renderEditPreviews();
+        setMode("generate");
+        syncCompactControls();
       }
       function addEditPreview(file, label, index = -1) {
         const url = URL.createObjectURL(file);
@@ -1614,7 +2998,11 @@
           remove.type = "button";
           remove.textContent = "\u00d7";
           remove.title = "Remove image";
-          remove.addEventListener("click", () => removeEditSourceFile(index));
+          remove.addEventListener("click", event => {
+            event.preventDefault();
+            event.stopPropagation();
+            removeEditSourceFile(index);
+          });
           card.append(remove);
         }
         card.append(img, caption);
@@ -1632,6 +3020,8 @@
         syncEditImageInput();
         editMaskInput.value = "";
         renderEditPreviews();
+        setMode("edit");
+        syncCompactControls();
       }
       modeSwitch.addEventListener("click", (e) => {
         const btn = e.target.closest(".mode-btn");
@@ -1661,6 +3051,8 @@
           validateCustomSize(false);
         }
         else setSelectedSizeFromControls();
+        syncCompactControls();
+        if (customSelected) revealCompactCustomSize();
       });
       function isCustomSizeSelected() {
         return selectedRatio === "custom";
@@ -1676,11 +3068,17 @@
         } else if (width * height > maxImagePixels) {
           message = `Custom resolution must not exceed ${maxImagePixels.toLocaleString()} pixels. Try 3840x2160 or smaller.`;
         }
-        customWidth.classList.toggle("invalid", Boolean(message) && (!Number.isInteger(width) || width < 16 || width > 4096 || width % 16 !== 0));
-        customHeight.classList.toggle("invalid", Boolean(message) && (!Number.isInteger(height) || height < 16 || height > 4096 || height % 16 !== 0));
+        const widthInvalid = Boolean(message) && (!Number.isInteger(width) || width < 16 || width > 4096 || width % 16 !== 0);
+        const heightInvalid = Boolean(message) && (!Number.isInteger(height) || height < 16 || height > 4096 || height % 16 !== 0);
+        customWidth.classList.toggle("invalid", widthInvalid);
+        customHeight.classList.toggle("invalid", heightInvalid);
+        compactCustomWidth?.classList.toggle("invalid", widthInvalid);
+        compactCustomHeight?.classList.toggle("invalid", heightInvalid);
         if (width * height > maxImagePixels) {
           customWidth.classList.add("invalid");
           customHeight.classList.add("invalid");
+          compactCustomWidth?.classList.add("invalid");
+          compactCustomHeight?.classList.add("invalid");
         }
         customSizeHint.hidden = !message || !showHint;
         customSizeHint.textContent = message;
@@ -1689,8 +3087,8 @@
       function getCustomSize() {
         const size = validateCustomSize(true);
         if (!size) {
-          customWidth.reportValidity?.();
-          customHeight.reportValidity?.();
+          (compactCustomWidth && isCustomSizeSelected() ? compactCustomWidth : customWidth).reportValidity?.();
+          (compactCustomHeight && isCustomSizeSelected() ? compactCustomHeight : customHeight).reportValidity?.();
         }
         return size;
       }
@@ -1700,8 +3098,23 @@
           const size = validateCustomSize(true);
           selectedSize = size || `${customWidth.value}x${customHeight.value}`;
           setCustomSizePreview();
+          syncCompactControls();
         });
         input.addEventListener("blur", () => { if (isCustomSizeSelected()) validateCustomSize(true); });
+      });
+      [
+        [compactCustomWidth, customWidth],
+        [compactCustomHeight, customHeight],
+      ].forEach(([compactInput, sourceInput]) => {
+        compactInput?.addEventListener("input", () => {
+          sourceInput.value = compactInput.value;
+          if (!isCustomSizeSelected()) selectedRatio = "custom";
+          const size = validateCustomSize(true);
+          selectedSize = size || `${customWidth.value}x${customHeight.value}`;
+          setCustomSizePreview();
+          syncCompactControls();
+        });
+        compactInput?.addEventListener("blur", () => { if (isCustomSizeSelected()) validateCustomSize(true); });
       });
       resolutionSeg.addEventListener("click", (e) => {
         const btn = e.target.closest(".seg-btn");
@@ -1710,6 +3123,7 @@
         btn.classList.add("active");
         selectedResolution = btn.dataset.value;
         if (!isCustomSizeSelected()) setSelectedSizeFromControls();
+        syncCompactControls();
       });
       qualitySeg.addEventListener("click", (e) => {
         const btn = e.target.closest(".seg-btn");
@@ -1717,6 +3131,7 @@
         qualitySeg.querySelectorAll(".seg-btn").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
         selectedQuality = btn.dataset.value;
+        syncCompactControls();
       });
       outputFormatSeg.addEventListener("click", (e) => {
         const btn = e.target.closest(".seg-btn");
@@ -1724,6 +3139,66 @@
         outputFormatSeg.querySelectorAll(".seg-btn").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
         selectedOutputFormat = btn.dataset.value;
+        syncCompactControls();
+      });
+      if (compactControls) {
+        let compactScrollTimer = null;
+        const showCompactScrollbar = () => {
+          if (!compactHasOverflow()) return;
+          compactControls.classList.add("is-scrolling");
+          clearTimeout(compactScrollTimer);
+          compactScrollTimer = setTimeout(() => {
+            compactControls.classList.remove("is-scrolling");
+          }, 900);
+        };
+        ["scroll", "wheel", "touchstart", "pointerdown"].forEach(type => {
+          compactControls.addEventListener(type, showCompactScrollbar, { passive: true });
+        });
+        window.addEventListener("resize", () => {
+          updateCompactOverflow();
+        });
+        requestAnimationFrame(updateCompactOverflow);
+      }
+      compactControls?.querySelector(".compact-upload")?.addEventListener("click", () => editImageInput.click());
+      uploadSummary?.addEventListener("click", event => {
+        event.preventDefault();
+        clearEditInputs();
+      });
+      ratioSelect?.addEventListener("change", () => {
+        selectedRatio = ratioSelect.value;
+        const customSelected = selectedRatio === "custom";
+        customSizeRow.hidden = !customSelected;
+        resolutionField.hidden = customSelected;
+        setActiveButton(ratioGrid, ".ratio-btn", "ratio", selectedRatio);
+        if (customSelected) {
+          selectedSize = `${customWidth.value}x${customHeight.value}`;
+          setCustomSizePreview();
+          validateCustomSize(false);
+        } else {
+          setSelectedSizeFromControls();
+        }
+        syncCompactControls();
+        if (customSelected) revealCompactCustomSize();
+      });
+      resolutionSelect?.addEventListener("change", () => {
+        selectedResolution = resolutionSelect.value;
+        setActiveButton(resolutionSeg, ".seg-btn", "value", selectedResolution);
+        if (!isCustomSizeSelected()) setSelectedSizeFromControls();
+        syncCompactControls();
+      });
+      qualitySelect?.addEventListener("change", () => {
+        selectedQuality = qualitySelect.value;
+        setActiveButton(qualitySeg, ".seg-btn", "value", selectedQuality);
+        syncCompactControls();
+      });
+      formatSelect?.addEventListener("change", () => {
+        selectedOutputFormat = formatSelect.value;
+        setActiveButton(outputFormatSeg, ".seg-btn", "value", selectedOutputFormat);
+        syncCompactControls();
+      });
+      countSelect?.addEventListener("change", () => {
+        form.querySelector('[name="n"]').value = countSelect.value;
+        syncCompactControls();
       });
 
       function setStatus(text, mode = "idle") {
@@ -1782,6 +3257,10 @@
       }
       function formatStatus(v) { return v === "failed" ? "failed" : "success"; }
       function formatOperation(v) { return v === "edit" ? "edit" : "gen"; }
+      function dimensionsFromSize(size = "") {
+        const match = /^(\d+)x(\d+)$/.exec(size || "");
+        return match ? { width: Number(match[1]), height: Number(match[2]) } : { width: 3, height: 4 };
+      }
       function promptPreview(job) {
         const t = (job.payload?.prompt || job.prompt || "no prompt");
         const prefix = job.operation === "edit" ? "[Edit] " : "";
@@ -1791,15 +3270,24 @@
       function clearPromptAfterSuccess(prompt) {
         if (promptInput.value === prompt) promptInput.value = "";
       }
-      clearPrompt.addEventListener("click", () => {
+      let clearPromptLastRun = 0;
+      function runClearPrompt(event = null) {
+        event?.preventDefault();
+        event?.stopPropagation();
+        const now = Date.now();
+        if (now - clearPromptLastRun < 180) return;
+        clearPromptLastRun = now;
         promptInput.value = "";
         if (selectedMode === "edit") clearEditInputs();
         if (watchedJobId && isActiveJob(watchedJob)) {
           moveJobToBg(watchedJob);
           return;
         }
-        promptInput.focus();
-      });
+        if (!event || event.type === "click") promptInput.focus();
+      }
+      clearPrompt.addEventListener("pointerdown", runClearPrompt);
+      clearPrompt.addEventListener("touchstart", runClearPrompt, { passive: false });
+      clearPrompt.addEventListener("click", runClearPrompt);
       async function copyText(text) {
         try { await navigator.clipboard.writeText(text); } catch {
           const ta = document.createElement("textarea");
@@ -1924,6 +3412,43 @@
         window.addEventListener("resize", () => applyHistoryH(historyPanel.getBoundingClientRect().height));
       })();
 
+      function clampComposerHeight(height) {
+        const min = 150;
+        const max = Math.max(min, Math.round(window.innerHeight * 0.48));
+        return Math.min(max, Math.max(min, height));
+      }
+      function applyComposerHeight(height) {
+        const next = clampComposerHeight(height);
+        form.style.setProperty("--composer-height", `${next}px`);
+        localStorage.setItem(composerHeightKey, String(next));
+      }
+      (function initComposerResize() {
+        const saved = parseInt(localStorage.getItem(composerHeightKey), 10);
+        if (isFinite(saved)) applyComposerHeight(saved);
+        let startY = 0;
+        let startH = 0;
+        const move = event => applyComposerHeight(startH + startY - event.clientY);
+        const stop = () => {
+          form.classList.remove("resizing");
+          document.body.style.cursor = "";
+          document.removeEventListener("pointermove", move);
+          document.removeEventListener("pointerup", stop);
+        };
+        composerResize.addEventListener("pointerdown", event => {
+          event.preventDefault();
+          startY = event.clientY;
+          startH = form.getBoundingClientRect().height;
+          form.classList.add("resizing");
+          document.body.style.cursor = "ns-resize";
+          document.addEventListener("pointermove", move);
+          document.addEventListener("pointerup", stop);
+        });
+        window.addEventListener("resize", () => {
+          const savedHeight = parseInt(localStorage.getItem(composerHeightKey), 10);
+          if (isFinite(savedHeight)) applyComposerHeight(savedHeight);
+        });
+      })();
+
       function createImageCard(image, meta = {}) {
         const card = document.createElement("div");
         card.className = "result-card";
@@ -1969,10 +3494,67 @@
       }
 
       function setHistoryMode(mode) {
-        selectedHistoryMode = mode === "edit" ? "edit" : "generate";
+        selectedHistoryMode = "all";
         selectedHistoryIds.clear();
         selectingHistory = false;
         renderHistory(allHistoryRecords);
+      }
+      function revealHistoryRowAt(clientX, clientY) {
+        const row = document.elementFromPoint(clientX, clientY)?.closest?.(".history-row:not(.history-job-row)");
+        if (!row || !history.contains(row)) return;
+        history.querySelectorAll(".history-row.is-revealed").forEach(item => {
+          if (item !== row) item.classList.remove("is-revealed");
+        });
+        row.classList.add("is-revealed");
+      }
+
+      function createJobPlaceholderRow(job) {
+        const body = bodyFromJob(job);
+        const row = document.createElement("div");
+        row.className = "history-row history-job-row";
+        row.dataset.jobId = job.id;
+        const dims = dimensionsFromSize(body.size);
+        row.style.setProperty("--job-aspect", `${dims.width} / ${dims.height}`);
+
+        const content = document.createElement("div");
+        content.className = "job-frame-content";
+        const inner = document.createElement("div");
+        inner.className = "job-frame-inner";
+        const spinner = document.createElement("div");
+        spinner.className = "spinner";
+        const title = document.createElement("div");
+        title.className = "job-frame-title";
+        title.textContent = `${operationLabel(body.operation)} job ${job.status || "queued"}`;
+        const progress = document.createElement("div");
+        progress.className = "job-frame-progress";
+        const elapsed = Math.max(0, Math.round(Date.now() / 1000 - (job.created_at || job.started_at || Math.round(Date.now() / 1000))));
+        progress.textContent = `${body.size || "image"} · ${elapsed}s`;
+        const sub = document.createElement("div");
+        sub.className = "job-frame-sub";
+        sub.textContent = job.id || "Preparing job";
+        const actions = document.createElement("div");
+        actions.className = "job-frame-actions";
+        const cancel = document.createElement("button");
+        cancel.className = "mini-btn";
+        cancel.type = "button";
+        cancel.textContent = "Cancel";
+        cancel.style.borderColor = "var(--danger-border)";
+        cancel.style.color = "var(--danger)";
+        cancel.addEventListener("click", async e => {
+          e.stopPropagation();
+          await cancelBgJob(job);
+        });
+        actions.append(cancel);
+        inner.append(spinner, title, progress, sub, actions);
+        content.append(inner);
+        row.append(content);
+        return row;
+      }
+
+      function reuseHistoryRecord(record) {
+        applyHistoryOptions(record);
+        if (record.operation === "edit") clearEditInputs();
+        promptInput.focus();
       }
 
       function createHistoryRow(record) {
@@ -1986,14 +3568,40 @@
           check.checked ? selectedHistoryIds.add(record.id) : selectedHistoryIds.delete(record.id);
           updateSelectionUi();
         });
+
+        const thumbnailSrc = record.thumbnail_file || "";
+        if (thumbnailSrc) {
+          const img = document.createElement("img");
+          img.className = "history-thumb";
+          img.src = thumbnailSrc;
+          img.alt = record.prompt || "history image";
+          img.loading = "lazy";
+          img.decoding = "async";
+          if (record.thumbnail_width) img.width = record.thumbnail_width;
+          if (record.thumbnail_height) img.height = record.thumbnail_height;
+          row.append(img);
+        } else {
+          const placeholder = document.createElement("div");
+          placeholder.className = "history-placeholder";
+          placeholder.textContent = isFailedRecord(record) ? "FAILED" : "NO THUMB";
+          if (record.image_width && record.image_height) {
+            placeholder.style.aspectRatio = `${record.image_width} / ${record.image_height}`;
+          }
+          row.append(placeholder);
+        }
+
         const info = document.createElement("div"); info.className = "history-info";
         const prompt = document.createElement("div"); prompt.className = "history-prompt";
         prompt.textContent = record.prompt || "history image";
         const detail = document.createElement("div"); detail.className = "history-detail";
-        detail.textContent = [formatOperation(record.operation), formatSize(record.size), formatImageSpec(record), formatFileSize(record.file_size_bytes), formatQuality(record), formatOutputFormat(record.output_format), formatDate(record.created_at), formatStatus(record.status)].filter(Boolean).join(" \u00b7 ");
+        detail.textContent = [formatOperation(record.operation), formatSize(record.size), formatImageSpec(record), formatFileSize(record.thumbnail_file_size_bytes || record.file_size_bytes), formatQuality(record), formatOutputFormat(record.output_format), formatDate(record.created_at), formatStatus(record.status)].filter(Boolean).join(" \u00b7 ");
         info.append(prompt, detail);
         const actions = document.createElement("div"); actions.className = "history-row-actions";
         const view = document.createElement("button"); view.className = "history-view"; view.type = "button"; view.textContent = "View";
+        view.addEventListener("click", e => {
+          e.stopPropagation();
+          openModal(record);
+        });
         const edit = document.createElement("button"); edit.className = "history-edit"; edit.type = "button";
         edit.textContent = isFailedRecord(record) ? "Retry" : "Edit";
         edit.title = isFailedRecord(record)
@@ -2003,6 +3611,12 @@
           e.stopPropagation();
           if (isFailedRecord(record)) await retryHistoryRecord(record);
           else await startEditFromHistory(record);
+        });
+        const reuse = document.createElement("button"); reuse.className = "history-reuse"; reuse.type = "button"; reuse.textContent = "Reuse";
+        reuse.title = "Reuse this prompt and options";
+        reuse.addEventListener("click", e => {
+          e.stopPropagation();
+          reuseHistoryRecord(record);
         });
         const del = document.createElement("button"); del.className = "history-delete"; del.type = "button"; del.textContent = "\u00d7";
         del.title = "Delete";
@@ -2014,7 +3628,9 @@
           selectedHistoryIds.delete(record.id);
           await loadHistory();
         });
-        actions.append(view, edit, del);
+        actions.append(view, edit);
+        if (record.operation !== "edit") actions.append(reuse);
+        actions.append(del);
         row.append(check, info, actions);
         row.addEventListener("click", () => {
           if (selectingHistory) { check.checked = !check.checked; check.checked ? selectedHistoryIds.add(record.id) : selectedHistoryIds.delete(record.id); updateSelectionUi(); return; }
@@ -2023,16 +3639,17 @@
         return row;
       }
       function renderHistory(records) {
-        visibleHistoryRecords = records.filter(r => {
-          const operation = r.operation || "generate";
-          return selectedHistoryMode === "edit" ? operation === "edit" : operation === "generate";
-        });
-        historyCount.textContent = `${visibleHistoryRecords.length}`;
-        if (!visibleHistoryRecords.length) {
-          history.replaceChildren(Object.assign(document.createElement("div"), { className: "empty-state", style: "min-height:40px;font-size:11px;", textContent: `No ${selectedHistoryMode} history yet` }));
+        visibleHistoryRecords = [...records];
+        const visibleJobs = [...pendingHistoryJobs.values()];
+        historyCount.textContent = `${visibleHistoryRecords.length + visibleJobs.length}`;
+        if (!visibleHistoryRecords.length && !visibleJobs.length) {
+          history.replaceChildren(Object.assign(document.createElement("div"), { className: "empty-state", style: "min-height:40px;font-size:11px;", textContent: "No gallery results yet" }));
           updateSelectionUi(); return;
         }
-        history.replaceChildren(...visibleHistoryRecords.map(r => createHistoryRow(r)));
+        history.replaceChildren(
+          ...visibleJobs.map(job => createJobPlaceholderRow(job)),
+          ...visibleHistoryRecords.map(r => createHistoryRow(r))
+        );
         updateSelectionUi();
       }
       async function loadHistory() {
@@ -2047,6 +3664,20 @@
           history.replaceChildren(Object.assign(document.createElement("div"), { className: "error-box", textContent: `History load failed: ${e.message}` }));
         }
       }
+      history.addEventListener("touchstart", event => {
+        if (event.touches.length !== 1) return;
+        const touch = event.touches[0];
+        revealHistoryRowAt(touch.clientX, touch.clientY);
+      }, { passive: true });
+      history.addEventListener("touchmove", event => {
+        if (event.touches.length !== 1) return;
+        const touch = event.touches[0];
+        revealHistoryRowAt(touch.clientX, touch.clientY);
+      }, { passive: true });
+      history.addEventListener("pointermove", event => {
+        if (event.pointerType !== "touch" && event.pointerType !== "pen") return;
+        revealHistoryRowAt(event.clientX, event.clientY);
+      }, { passive: true });
       function updateSelectionUi() {
         const ids = visibleHistoryRecords.map(r => r.id).filter(Boolean);
         const allSel = ids.length > 0 && ids.every(id => selectedHistoryIds.has(id));
@@ -2193,9 +3824,21 @@
       }
       async function cancelBgJob(job) {
         try { await fetch(`/v1/jobs/${job.id}/cancel`, { method: "POST" }); }
-        finally { backgroundJobs.delete(job.id); renderJobsPopover(); await loadHistory(); }
+        finally {
+          backgroundJobs.delete(job.id);
+          pendingHistoryJobs.delete(job.id);
+          renderJobsPopover();
+          renderHistory(allHistoryRecords);
+          await loadHistory();
+        }
       }
-      function rememberBgJob(job) { if (!isActiveJob(job) || job.id === watchedJobId) return; backgroundJobs.set(job.id, job); renderJobsPopover(); }
+      function rememberBgJob(job) {
+        if (!isActiveJob(job)) return;
+        backgroundJobs.set(job.id, job);
+        pendingHistoryJobs.set(job.id, job);
+        renderJobsPopover();
+        renderHistory(allHistoryRecords);
+      }
       async function refreshBgJobs() {
         try {
           const res = await fetch("/v1/jobs"); if (!res.ok) return;
@@ -2205,6 +3848,7 @@
           for (const id of [...backgroundJobs.keys()]) {
             if (!activeIds.has(id)) {
               backgroundJobs.delete(id);
+              pendingHistoryJobs.delete(id);
               const fj = (data.jobs || []).find(j => j.id === id);
               if (fj) {
                 await loadHistory();
@@ -2212,8 +3856,9 @@
               }
             }
           }
-          active.forEach(j => { if (j.id !== watchedJobId) backgroundJobs.set(j.id, j); });
+          active.forEach(j => rememberBgJob(j));
           renderJobsPopover();
+          renderHistory(allHistoryRecords);
         } catch {}
       }
       function toggleJobsPopover() {
@@ -2256,22 +3901,16 @@
         return box;
       }
       async function showBgFinal(job) {
-        const cur = result.querySelector("[data-background-job-id]");
-        if (cur?.dataset.backgroundJobId !== job.id) return false;
+        pendingHistoryJobs.delete(job.id);
         await loadHistory();
         if (job.status === "succeeded") {
-          const body = bodyFromJob(job), data = job.result;
-          const meta = { operation: body.operation, prompt: body.prompt, size: body.size, quality: data?.provider_response?.quality || body.quality, output_format: data?.provider_response?.output_format || body.output_format };
-          const imgs = (data?.images || []).filter(i => i.file || i.url).map(i => createImageCard(i, { ...meta, ...i }));
-          stopBusy(`${imgs.length} image${imgs.length === 1 ? "" : "s"}`);
-          result.replaceChildren(...imgs); clearPromptAfterSuccess(body.prompt); return true;
-        }
-        if (job.status === "failed") {
-          stopBusy("Failed");
-          result.replaceChildren(createJobFailureCard(job, bodyFromJob(job)));
+          clearPromptAfterSuccess(bodyFromJob(job).prompt);
           return true;
         }
-        if (job.status === "cancelled") { stopBusy("Cancelled"); return true; }
+        if (job.status === "failed") {
+          return true;
+        }
+        if (job.status === "cancelled") return true;
         return false;
       }
       async function pollBgJob(jobId) {
@@ -2281,23 +3920,24 @@
           try {
             const res = await fetch(`/v1/jobs/${jobId}`); if (!res.ok) continue;
             const job = await res.json();
-            if (isActiveJob(job)) { if (job.id !== watchedJobId) backgroundJobs.set(job.id, job); renderJobsPopover(); continue; }
+            if (isActiveJob(job)) {
+              rememberBgJob(job);
+              renderHistory(allHistoryRecords);
+              continue;
+            }
             backgroundJobs.delete(jobId); renderJobsPopover(); await loadHistory();
             const shown = await showBgFinal(job);
             if (job.status === "succeeded") clearPromptAfterSuccess(bodyFromJob(job).prompt);
-            if (!watchedJobId && !shown) stopBusy(decorateStatus("Done"));
+            if (!shown) refreshIdleStatus();
             return;
           } catch { continue; }
         }
       }
       function moveJobToBg(job) {
         activePollToken++; watchedJobId = null; watchedJob = null; submit.disabled = false;
-        if (!backgroundJobs.has(job.id)) { backgroundJobs.set(job.id, job); pollBgJob(job.id); }
-        jobsPopover.hidden = false;
-        renderJobsPopover();
+        if (!backgroundJobs.has(job.id)) { rememberBgJob(job); pollBgJob(job.id); }
         refreshBgJobs();
-        stopBusy(decorateStatus("Ready"));
-        showBgNotice(job);
+        refreshIdleStatus();
       }
 
       function enterJob(job) {
@@ -2307,25 +3947,7 @@
       }
       function showJobState(job, body, token) {
         if (token === activePollToken) watchedJob = job;
-        const canCancel = job.status === "queued" || job.status === "running";
-        const wrap = document.createElement("div");
-        wrap.className = "loader-state";
-        wrap.innerHTML = `
-          ${canCancel ? '<div class="spinner"></div>' : ""}
-          <div class="loader-text">${operationLabel(job.operation)} job ${job.status}</div>
-          <div class="loader-sub">${job.id}</div>
-          ${canCancel ? '<div class="inline-actions"><button class="mini-btn" data-act="bg" type="button">Background</button><button class="mini-btn" data-act="cancel" type="button" style="border-color:var(--danger-border);color:var(--danger);">Cancel</button></div>' : ""}
-        `;
-        if (canCancel) {
-          wrap.querySelector('[data-act="bg"]').addEventListener("click", () => moveJobToBg(job));
-          wrap.querySelector('[data-act="cancel"]').addEventListener("click", async () => {
-            await fetch(`/v1/jobs/${job.id}/cancel`, { method: "POST" });
-            if (token !== activePollToken) return;
-            stopBusy("Cancelled"); submit.disabled = false; watchedJobId = null; watchedJob = null;
-            await pollJob(job.id, body, token);
-          });
-        }
-        result.replaceChildren(wrap);
+        rememberBgJob({ ...job, operation: body.operation, prompt: body.prompt, payload: { ...(job.payload || {}), ...body } });
       }
       async function pollJob(jobId, body, token) {
         let polls = 0;
@@ -2340,27 +3962,24 @@
             return;
           }
           if (job.status === "queued" || job.status === "running") {
-            showJobState(job, body, token);
+            showJobState({ ...job, operation: body.operation, prompt: body.prompt, payload: { ...(job.payload || {}), ...body } }, body, token);
             const delay = polls < 5 ? 2000 : polls < 9 ? 5000 : 10000;
             await new Promise(r => setTimeout(r, delay)); continue;
           }
-          backgroundJobs.delete(jobId); renderJobsPopover(); submit.disabled = false; watchedJobId = null; watchedJob = null;
+          backgroundJobs.delete(jobId);
+          pendingHistoryJobs.delete(jobId);
+          renderJobsPopover();
+          submit.disabled = false; watchedJobId = null; watchedJob = null;
           if (job.status === "cancelled") {
             stopBusy("Cancelled");
-            result.replaceChildren(Object.assign(document.createElement("div"), { className: "empty-state", textContent: `${operationLabel(body.operation)} cancelled.` }));
+            renderHistory(allHistoryRecords);
             return;
           }
           if (job.status === "failed") {
             stopBusy("Failed");
             await loadHistory();
-            result.replaceChildren(createJobFailureCard(job, body));
             return;
           }
-          const data = job.result;
-          const meta = { operation: body.operation, prompt: body.prompt, size: body.size, quality: data?.provider_response?.quality || body.quality, output_format: data?.provider_response?.output_format || body.output_format };
-          const imgs = (data?.images || []).filter(i => i.file || i.url).map(i => createImageCard(i, { ...meta, ...i }));
-          stopBusy(`${imgs.length} image${imgs.length === 1 ? "" : "s"}`);
-          result.replaceChildren(...imgs);
           await loadHistory(); clearPromptAfterSuccess(body.prompt);
           return;
         }
@@ -2368,6 +3987,7 @@
 
       form.addEventListener("submit", async (e) => {
         e.preventDefault();
+        setMode(editSourceFiles.length ? "edit" : "generate");
         const size = isCustomSizeSelected() ? getCustomSize() : selectedSize;
         if (!size) return;
         if (selectedMode === "edit" && !editSourceFiles.length) {
@@ -2376,13 +3996,11 @@
           return;
         }
         const token = ++activePollToken; watchedJobId = null; watchedJob = null;
-        setBusy(busyLabel(selectedMode)); submit.disabled = true;
-        result.replaceChildren(Object.assign(document.createElement("div"), {
-          className: "loader-state",
-          innerHTML: `<div class="spinner"></div><div class="loader-text">${busyLabel(selectedMode)}...</div><div class="loader-sub">4K, edits, or complex prompts may take a few minutes</div>`
-        }));
-        const count = Math.min(10, Math.max(1, parseInt(form.querySelector('[name="n"]').value, 10) || 1));
+        submit.disabled = true;
+        const count = Math.min(5, Math.max(1, parseInt(form.querySelector('[name="n"]').value, 10) || 1));
         const body = { operation: selectedMode, provider_id: selectedProviderId, prompt: promptInput.value, size, quality: selectedQuality, output_format: selectedOutputFormat, n: count };
+        const submittedPrompt = body.prompt;
+        promptInput.value = "";
         let res, data;
         try {
           if (selectedMode === "edit") {
@@ -2405,16 +4023,22 @@
           data = await res.json();
         } catch (err) {
           stopBusy("Failed"); submit.disabled = false; watchedJobId = null; watchedJob = null;
+          if (!promptInput.value) promptInput.value = submittedPrompt;
           result.replaceChildren(Object.assign(document.createElement("div"), { className: "error-box", textContent: `Request failed: ${err.message}` }));
           return;
         }
         if (!res.ok) {
           stopBusy("Failed"); submit.disabled = false; watchedJobId = null; watchedJob = null;
+          if (!promptInput.value) promptInput.value = submittedPrompt;
           result.replaceChildren(Object.assign(document.createElement("div"), { className: "error-box", textContent: `${operationLabel(selectedMode)} failed (${res.status}):\n${formatError(data)}` }));
           return;
         }
-        watchedJobId = data.id; watchedJob = data; backgroundJobs.delete(data.id); renderJobsPopover();
-        showJobState(data, body, token); await pollJob(data.id, body, token);
+        const job = { ...data, operation: body.operation, prompt: body.prompt, payload: { ...(data.payload || {}), ...body } };
+        submit.disabled = false;
+        watchedJobId = null;
+        watchedJob = null;
+        rememberBgJob(job);
+        pollBgJob(job.id);
       });
 
       async function resumeActiveJob() {
@@ -2422,7 +4046,7 @@
         const data = await res.json();
         const activeJobs = (data.jobs || []).filter(isActiveJob);
         activeJobs.forEach(job => {
-          backgroundJobs.set(job.id, job);
+          rememberBgJob(job);
           pollBgJob(job.id);
         });
         watchedJobId = null;
@@ -2432,7 +4056,14 @@
         refreshIdleStatus();
       }
 
-      setMode(localStorage.getItem(modeStorageKey) || "generate");
+      applySizeSelection("1536x2048");
+      selectedQuality = "auto";
+      selectedOutputFormat = "png";
+      setActiveButton(qualitySeg, ".seg-btn", "value", selectedQuality);
+      setActiveButton(outputFormatSeg, ".seg-btn", "value", selectedOutputFormat);
+      form.querySelector('[name="n"]').value = "1";
+      syncCompactControls();
+      setMode("generate");
       loadProviders();
       window.addEventListener("beforeunload", clearEditPreviews);
       loadHistory(); resumeActiveJob(); refreshBgJobs();

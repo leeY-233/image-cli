@@ -29,6 +29,7 @@ from fastapi.responses import (
     RedirectResponse,
     StreamingResponse,
 )
+from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, Field
 
 
@@ -117,7 +118,10 @@ MAX_IMAGE_DIMENSION = 4096
 MAX_IMAGE_PIXELS = 3840 * 2160
 MAX_EDIT_UPLOAD_BYTES = 50 * 1024 * 1024
 MAX_EDIT_SOURCE_IMAGES = 16
+MAX_IMAGE_COUNT = 5
 SUPPORTED_EDIT_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp"}
+THUMBNAIL_MAX_EDGE = 1024
+THUMBNAIL_QUALITY = 92
 ENV_CONFIG_KEYS = {
     "OPENAI_API_KEY",
     "OPENAI_BASE_URL",
@@ -183,7 +187,7 @@ class GenerateImageRequest(BaseModel):
     size: str | None = None
     quality: str | None = None
     output_format: Literal["png", "jpeg", "webp"] | None = None
-    n: int = Field(default=1, ge=1, le=10)
+    n: int = Field(default=1, ge=1, le=MAX_IMAGE_COUNT)
     response_format: Literal["b64_json", "url"] | None = None
     extra: dict[str, Any] = Field(default_factory=dict)
 
@@ -231,6 +235,10 @@ def _safe_int(value: Any, default: int = 0) -> int:
         return int(value)
     except (TypeError, ValueError):
         return default
+
+
+def _clamp_image_count(value: Any) -> int:
+    return min(MAX_IMAGE_COUNT, max(1, _safe_int(value, 1)))
 
 
 def _parse_size(size: str) -> tuple[int, int] | None:
@@ -911,6 +919,95 @@ def _history_file_metadata(file_url: str) -> dict[str, int | str | None]:
     }
 
 
+def _thumbnail_file_url(history_id: str) -> str:
+    safe_id = "".join(char if char.isalnum() or char in "-_" else "-" for char in history_id)
+    return f"/files/thumb-{safe_id or uuid.uuid4().hex}.webp"
+
+
+def _thumbnail_metadata(file_url: str) -> dict[str, int | str | None]:
+    metadata = _history_file_metadata(file_url)
+    return {
+        "thumbnail_file_size_bytes": metadata["file_size_bytes"],
+        "thumbnail_width": metadata["image_width"],
+        "thumbnail_height": metadata["image_height"],
+        "thumbnail_dimensions": metadata["image_dimensions"],
+    }
+
+
+def _generate_history_thumbnail(history_id: str, file_url: str) -> dict[str, int | str | None]:
+    source_path = _file_path_from_url(file_url)
+    if source_path is None or not source_path.is_file():
+        return {}
+
+    thumbnail_url = _thumbnail_file_url(history_id)
+    thumbnail_path = _file_path_from_url(thumbnail_url)
+    if thumbnail_path is None:
+        return {}
+    if thumbnail_path.is_file():
+        return {"thumbnail_file": thumbnail_url, **_thumbnail_metadata(thumbnail_url)}
+
+    try:
+        with Image.open(source_path) as raw_image:
+            image = ImageOps.exif_transpose(raw_image)
+            image.thumbnail((THUMBNAIL_MAX_EDGE, THUMBNAIL_MAX_EDGE), Image.Resampling.LANCZOS)
+            if image.mode not in {"RGB", "RGBA"}:
+                image = image.convert("RGBA" if "A" in image.getbands() else "RGB")
+            image.save(thumbnail_path, "WEBP", quality=THUMBNAIL_QUALITY, method=6)
+    except (OSError, UnidentifiedImageError) as exc:
+        _log_event(
+            "thumbnail_generate_failed",
+            history_id=history_id,
+            file=file_url,
+            detail=f"{exc.__class__.__name__}: {exc}",
+        )
+        return {}
+
+    metadata = _thumbnail_metadata(thumbnail_url)
+    _log_event(
+        "thumbnail_generated",
+        history_id=history_id,
+        file=file_url,
+        thumbnail_file=thumbnail_url,
+        thumbnail_width=metadata["thumbnail_width"],
+        thumbnail_height=metadata["thumbnail_height"],
+        thumbnail_file_size_bytes=metadata["thumbnail_file_size_bytes"],
+    )
+    return {"thumbnail_file": thumbnail_url, **metadata}
+
+
+def _ensure_history_thumbnail(record: dict[str, Any]) -> None:
+    if record.get("status") == "failed":
+        return
+    file_url = str(record.get("file") or "")
+    if not file_url.startswith("/files/"):
+        return
+
+    thumbnail_url = str(record.get("thumbnail_file") or "")
+    thumbnail_path = _file_path_from_url(thumbnail_url) if thumbnail_url else None
+    if thumbnail_url and thumbnail_path and thumbnail_path.is_file():
+        metadata = _thumbnail_metadata(thumbnail_url)
+        longest_edge = max(
+            _safe_int(metadata.get("thumbnail_width")),
+            _safe_int(metadata.get("thumbnail_height")),
+        )
+        source_longest_edge = max(
+            _safe_int(record.get("image_width")),
+            _safe_int(record.get("image_height")),
+        )
+        if source_longest_edge > longest_edge and longest_edge < THUMBNAIL_MAX_EDGE:
+            thumbnail_path.unlink(missing_ok=True)
+        else:
+            record["thumbnail_file_size_bytes"] = metadata["thumbnail_file_size_bytes"]
+            record["thumbnail_width"] = metadata["thumbnail_width"]
+            record["thumbnail_height"] = metadata["thumbnail_height"]
+            record["thumbnail_dimensions"] = metadata["thumbnail_dimensions"]
+            return
+
+    thumbnail_data = _generate_history_thumbnail(str(record.get("id") or ""), file_url)
+    if thumbnail_data:
+        record.update(thumbnail_data)
+
+
 def _normalize_history_record(record: dict[str, Any]) -> dict[str, Any]:
     normalized = record.copy()
     if not normalized.get("id"):
@@ -941,6 +1038,7 @@ def _normalize_history_record(record: dict[str, Any]) -> dict[str, Any]:
             else ""
         ),
     )
+    _ensure_history_thumbnail(normalized)
     return normalized
 
 
@@ -956,8 +1054,12 @@ def _normalize_history_records(records: list[dict[str, Any]]) -> list[dict[str, 
 
 def _load_history() -> list[dict[str, Any]]:
     path = _history_path()
-    with _json_file_lock(path, exclusive=False):
-        return _normalize_history_records(_read_json_list_unlocked(path))
+    with _json_file_lock(path, exclusive=True):
+        raw_records = _read_json_list_unlocked(path)
+        normalized = _normalize_history_records(raw_records)
+        if normalized != raw_records:
+            _write_json_list_unlocked(path, normalized)
+        return normalized
 
 
 def _history_public(record: dict[str, Any]) -> dict[str, Any]:
@@ -984,6 +1086,11 @@ def _history_public(record: dict[str, Any]) -> dict[str, Any]:
         "image_width": record.get("image_width"),
         "image_height": record.get("image_height"),
         "image_dimensions": record.get("image_dimensions", ""),
+        "thumbnail_file": record.get("thumbnail_file"),
+        "thumbnail_file_size_bytes": record.get("thumbnail_file_size_bytes"),
+        "thumbnail_width": record.get("thumbnail_width"),
+        "thumbnail_height": record.get("thumbnail_height"),
+        "thumbnail_dimensions": record.get("thumbnail_dimensions", ""),
         "created_at": record.get("created_at", 0),
     }
 
@@ -1063,6 +1170,10 @@ def _delete_history_file(
     history_file_references: set[str] | None = None,
 ) -> None:
     seen: set[str] = set()
+    thumbnail_url = str(record.get("thumbnail_file") or "")
+    if thumbnail_url.startswith("/files/"):
+        _delete_file_url(thumbnail_url)
+
     for key in ("file", "source_file"):
         file_url = str(record.get(key) or "")
         if not file_url.startswith("/files/") or file_url in seen:
@@ -1234,6 +1345,13 @@ def debug_page(request: Request):
     if not _is_authenticated(request):
         return RedirectResponse("/login", status_code=303)
     return HTMLResponse(_read_template("debug.html"))
+
+
+@app.get("/ui-preview", response_class=HTMLResponse)
+def ui_preview_page(request: Request):
+    if not _is_authenticated(request):
+        return RedirectResponse("/login", status_code=303)
+    return HTMLResponse(_read_template("ui-preview.html"))
 
 
 @app.get("/admin", response_class=HTMLResponse)
@@ -1426,6 +1544,7 @@ def _payload_from_request(request: GenerateImageRequest) -> dict[str, Any]:
         "response_format": request.response_format or settings.response_format,
     }
     payload.update(request.extra)
+    payload["n"] = _clamp_image_count(payload.get("n"))
     return payload
 
 
@@ -1470,10 +1589,11 @@ def _payload_from_edit_form(
         "size": image_size,
         "quality": quality or settings.image_quality,
         "output_format": output_format or settings.image_output_format,
-        "n": min(10, max(1, n)),
+        "n": _clamp_image_count(n),
         "response_format": response_format or settings.response_format,
     }
     payload.update(_parse_extra_json(extra))
+    payload["n"] = _clamp_image_count(payload.get("n"))
     return payload
 
 
@@ -1704,28 +1824,32 @@ def _save_images_to_history(
     for image in images:
         if not (image.file or image.url):
             continue
+        history_id = uuid.uuid4().hex
         metadata = _history_file_metadata(str(image.file or ""))
+        thumbnail_data = _generate_history_thumbnail(history_id, str(image.file or ""))
         history_records.append(
             {
-            "file": image.file,
-            "url": image.url,
-            "prompt": prompt,
-            "revised_prompt": image.revised_prompt,
-            "size": payload["size"],
-            "quality": effective_quality,
-            "requested_quality": requested_quality,
-            "actual_quality": effective_quality,
-            "output_format": provider_json.get("output_format") or payload.get("output_format", ""),
-            "model": payload["model"],
-            "provider_id": payload.get("provider_id", ""),
-            "provider_name": provider_json.get("provider_name", ""),
-            "operation": operation,
-            "source_file": source_file,
-            "file_size_bytes": metadata["file_size_bytes"],
-            "image_width": metadata["image_width"],
-            "image_height": metadata["image_height"],
-            "image_dimensions": metadata["image_dimensions"],
-            "created_at": now,
+                "id": history_id,
+                "file": image.file,
+                "url": image.url,
+                "prompt": prompt,
+                "revised_prompt": image.revised_prompt,
+                "size": payload["size"],
+                "quality": effective_quality,
+                "requested_quality": requested_quality,
+                "actual_quality": effective_quality,
+                "output_format": provider_json.get("output_format") or payload.get("output_format", ""),
+                "model": payload["model"],
+                "provider_id": payload.get("provider_id", ""),
+                "provider_name": provider_json.get("provider_name", ""),
+                "operation": operation,
+                "source_file": source_file,
+                "file_size_bytes": metadata["file_size_bytes"],
+                "image_width": metadata["image_width"],
+                "image_height": metadata["image_height"],
+                "image_dimensions": metadata["image_dimensions"],
+                **thumbnail_data,
+                "created_at": now,
             }
         )
     _append_history(history_records)
