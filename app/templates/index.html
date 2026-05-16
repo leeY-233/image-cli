@@ -1544,6 +1544,7 @@
         background: transparent;
         overflow-y: auto;
         overflow-x: hidden;
+        scroll-behavior: auto;
       }
       .history-resize { display: none; }
       .history-header {
@@ -1574,6 +1575,9 @@
       .selecting .history-check { visibility: visible; }
       .history-row {
         container-type: inline-size;
+        content-visibility: auto;
+        contain: layout paint style;
+        contain-intrinsic-size: 220px 320px;
         break-inside: avoid;
         position: relative;
         display: block;
@@ -1822,6 +1826,19 @@
       }
       @media (max-width: 1024px) {
         .history-list { columns: 3 190px; }
+      }
+      @media (hover: none), (pointer: coarse) {
+        .history-row {
+          transition: border-color 0.12s;
+        }
+        .history-row:hover {
+          transform: none;
+          box-shadow: none;
+        }
+        .history-info,
+        .history-row-actions {
+          transition: opacity 0.08s;
+        }
       }
       @media (max-width: 760px) {
         .sidebar {
@@ -2761,9 +2778,17 @@
       let selectedHistoryMode = "all";
       let allHistoryRecords = [];
       let visibleHistoryRecords = [];
+      let renderedHistoryCount = 0;
+      let historyScrollQueued = false;
+      let revealedHistoryRow = null;
+      let revealFrameQueued = false;
+      let pendingRevealPoint = null;
       const selectedHistoryIds = new Set();
       const backgroundJobs = new Map();
       const pendingHistoryJobs = new Map();
+      const historyInitialBatchSize = 12;
+      const historyAppendBatchSize = 12;
+      const historyAppendAheadPx = 80;
       let timer = null;
       let activePollToken = 0;
       let watchedJobId = null;
@@ -3502,10 +3527,22 @@
       function revealHistoryRowAt(clientX, clientY) {
         const row = document.elementFromPoint(clientX, clientY)?.closest?.(".history-row:not(.history-job-row)");
         if (!row || !history.contains(row)) return;
-        history.querySelectorAll(".history-row.is-revealed").forEach(item => {
-          if (item !== row) item.classList.remove("is-revealed");
-        });
+        if (row === revealedHistoryRow) return;
+        if (revealedHistoryRow?.isConnected) revealedHistoryRow.classList.remove("is-revealed");
+        revealedHistoryRow = row;
         row.classList.add("is-revealed");
+      }
+      function scheduleHistoryReveal(clientX, clientY) {
+        pendingRevealPoint = { clientX, clientY };
+        if (revealFrameQueued) return;
+        revealFrameQueued = true;
+        requestAnimationFrame(() => {
+          revealFrameQueued = false;
+          if (!pendingRevealPoint) return;
+          const point = pendingRevealPoint;
+          pendingRevealPoint = null;
+          revealHistoryRowAt(point.clientX, point.clientY);
+        });
       }
 
       function createJobPlaceholderRow(job) {
@@ -3638,19 +3675,52 @@
         });
         return row;
       }
+      function appendHistoryBatch() {
+        if (renderedHistoryCount >= visibleHistoryRecords.length) return false;
+        const start = renderedHistoryCount;
+        const end = Math.min(start + historyAppendBatchSize, visibleHistoryRecords.length);
+        const fragment = document.createDocumentFragment();
+        for (let i = start; i < end; i++) {
+          fragment.append(createHistoryRow(visibleHistoryRecords[i]));
+        }
+        history.append(fragment);
+        renderedHistoryCount = end;
+        updateSelectionUi();
+        return true;
+      }
+      function appendHistoryIfNeeded() {
+        historyScrollQueued = false;
+        if (renderedHistoryCount >= visibleHistoryRecords.length) return;
+        const distanceToBottom = historyPanel.scrollHeight - historyPanel.scrollTop - historyPanel.clientHeight;
+        if (distanceToBottom <= historyAppendAheadPx) appendHistoryBatch();
+      }
+      function queueHistoryAppendCheck() {
+        if (historyScrollQueued) return;
+        historyScrollQueued = true;
+        requestAnimationFrame(appendHistoryIfNeeded);
+      }
       function renderHistory(records) {
         visibleHistoryRecords = [...records];
         const visibleJobs = [...pendingHistoryJobs.values()];
         historyCount.textContent = `${visibleHistoryRecords.length + visibleJobs.length}`;
+        renderedHistoryCount = 0;
+        historyScrollQueued = false;
+        if (revealedHistoryRow?.isConnected) revealedHistoryRow.classList.remove("is-revealed");
+        revealedHistoryRow = null;
         if (!visibleHistoryRecords.length && !visibleJobs.length) {
           history.replaceChildren(Object.assign(document.createElement("div"), { className: "empty-state", style: "min-height:40px;font-size:11px;", textContent: "No gallery results yet" }));
           updateSelectionUi(); return;
         }
-        history.replaceChildren(
-          ...visibleJobs.map(job => createJobPlaceholderRow(job)),
-          ...visibleHistoryRecords.map(r => createHistoryRow(r))
-        );
+        const fragment = document.createDocumentFragment();
+        visibleJobs.forEach(job => fragment.append(createJobPlaceholderRow(job)));
+        const initialCount = Math.min(historyInitialBatchSize, visibleHistoryRecords.length);
+        for (let i = 0; i < initialCount; i++) {
+          fragment.append(createHistoryRow(visibleHistoryRecords[i]));
+        }
+        renderedHistoryCount = initialCount;
+        history.replaceChildren(fragment);
         updateSelectionUi();
+        queueHistoryAppendCheck();
       }
       async function loadHistory() {
         try {
@@ -3667,17 +3737,18 @@
       history.addEventListener("touchstart", event => {
         if (event.touches.length !== 1) return;
         const touch = event.touches[0];
-        revealHistoryRowAt(touch.clientX, touch.clientY);
+        scheduleHistoryReveal(touch.clientX, touch.clientY);
       }, { passive: true });
       history.addEventListener("touchmove", event => {
         if (event.touches.length !== 1) return;
         const touch = event.touches[0];
-        revealHistoryRowAt(touch.clientX, touch.clientY);
+        scheduleHistoryReveal(touch.clientX, touch.clientY);
       }, { passive: true });
       history.addEventListener("pointermove", event => {
         if (event.pointerType !== "touch" && event.pointerType !== "pen") return;
-        revealHistoryRowAt(event.clientX, event.clientY);
+        scheduleHistoryReveal(event.clientX, event.clientY);
       }, { passive: true });
+      historyPanel.addEventListener("scroll", queueHistoryAppendCheck, { passive: true });
       function updateSelectionUi() {
         const ids = visibleHistoryRecords.map(r => r.id).filter(Boolean);
         const allSel = ids.length > 0 && ids.every(id => selectedHistoryIds.has(id));
