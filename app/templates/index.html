@@ -4147,6 +4147,7 @@
           return;
         }
         const job = { ...data, operation: body.operation, prompt: body.prompt, payload: { ...(data.payload || {}), ...body } };
+        if (body.operation === "edit") clearEditInputs();
         submit.disabled = false;
         watchedJobId = null;
         watchedJob = null;
