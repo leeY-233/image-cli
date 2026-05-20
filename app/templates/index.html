@@ -2803,6 +2803,7 @@
       let watchedJobId = null;
       let watchedJob = null;
       let jobsRefreshTimer = null;
+      let lastPendingJobsSignature = "";
       const historyHeightKey = "imageCliHistoryHeight_v2";
       const composerHeightKey = "imageCliComposerHeight_v1";
       const modeStorageKey = "imageCliMode_v1";
@@ -3738,12 +3739,14 @@
         });
       }
       function renderHistory(records, options = {}) {
+        const previousScrollTop = options.preserveScroll ? historyPanel.scrollTop : 0;
         visibleHistoryRecords = [...records];
         const visibleJobs = [...pendingHistoryJobs.values()];
         historyCount.textContent = `${visibleHistoryRecords.length + visibleJobs.length}`;
         renderedHistoryCount = 0;
         renderedHistoryPrefixCount = visibleJobs.length;
         historyScrollQueued = false;
+        lastPendingJobsSignature = pendingJobsSignature();
         if (revealedHistoryRow?.isConnected) revealedHistoryRow.classList.remove("is-revealed");
         revealedHistoryRow = null;
         if (!visibleHistoryRecords.length && !visibleJobs.length) {
@@ -3760,6 +3763,9 @@
         }
         renderedHistoryCount = initialCount;
         history.replaceChildren(fragment);
+        if (options.preserveScroll && previousScrollTop > 0) {
+          historyPanel.scrollTop = previousScrollTop;
+        }
         updateSelectionUi();
         queueHistoryAppendCheck();
       }
@@ -3769,7 +3775,7 @@
           if (!res.ok) throw new Error(`HTTP ${res.status}`);
           const data = await res.json();
           allHistoryRecords = data.images || [];
-          renderHistory(allHistoryRecords);
+          renderHistory(allHistoryRecords, { keepRenderedCount: renderedHistoryCount, preserveScroll: true });
         } catch (e) {
           historyCount.textContent = "!";
           history.replaceChildren(Object.assign(document.createElement("div"), { className: "error-box", textContent: `History load failed: ${e.message}` }));
@@ -3941,7 +3947,6 @@
           backgroundJobs.delete(job.id);
           pendingHistoryJobs.delete(job.id);
           renderJobsPopover();
-          renderHistory(allHistoryRecords);
           await loadHistory();
         }
       }
@@ -3950,7 +3955,19 @@
         backgroundJobs.set(job.id, job);
         pendingHistoryJobs.set(job.id, job);
         renderJobsPopover();
-        renderHistory(allHistoryRecords);
+        renderHistoryIfJobsChanged();
+      }
+      function pendingJobsSignature() {
+        return [...pendingHistoryJobs.values()]
+          .map(j => `${j.id}:${j.status || ""}`)
+          .sort()
+          .join("|");
+      }
+      function renderHistoryIfJobsChanged() {
+        const sig = pendingJobsSignature();
+        if (sig === lastPendingJobsSignature) return;
+        lastPendingJobsSignature = sig;
+        renderHistory(allHistoryRecords, { keepRenderedCount: renderedHistoryCount, preserveScroll: true });
       }
       async function refreshBgJobs() {
         try {
@@ -3971,7 +3988,7 @@
           }
           active.forEach(j => rememberBgJob(j));
           renderJobsPopover();
-          renderHistory(allHistoryRecords);
+          renderHistoryIfJobsChanged();
         } catch {}
       }
       function toggleJobsPopover() {
@@ -4035,7 +4052,7 @@
             const job = await res.json();
             if (isActiveJob(job)) {
               rememberBgJob(job);
-              renderHistory(allHistoryRecords);
+              renderHistoryIfJobsChanged();
               continue;
             }
             backgroundJobs.delete(jobId); renderJobsPopover(); await loadHistory();
@@ -4085,7 +4102,7 @@
           submit.disabled = false; watchedJobId = null; watchedJob = null;
           if (job.status === "cancelled") {
             stopBusy("Cancelled");
-            renderHistory(allHistoryRecords);
+            renderHistory(allHistoryRecords, { keepRenderedCount: renderedHistoryCount, preserveScroll: true });
             return;
           }
           if (job.status === "failed") {
