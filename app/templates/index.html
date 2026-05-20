@@ -2804,6 +2804,7 @@
       let watchedJob = null;
       let jobsRefreshTimer = null;
       let lastPendingJobsSignature = "";
+      let placeholderTickTimer = null;
       const historyHeightKey = "imageCliHistoryHeight_v2";
       const composerHeightKey = "imageCliComposerHeight_v1";
       const modeStorageKey = "imageCliMode_v1";
@@ -3574,8 +3575,12 @@
         title.textContent = `${operationLabel(body.operation)} job ${job.status || "queued"}`;
         const progress = document.createElement("div");
         progress.className = "job-frame-progress";
-        const elapsed = Math.max(0, Math.round(Date.now() / 1000 - (job.created_at || job.started_at || Math.round(Date.now() / 1000))));
-        progress.textContent = `${body.size || "image"} · ${elapsed}s`;
+        const startedAt = job.created_at || job.started_at || Math.round(Date.now() / 1000);
+        const sizeLabel = body.size || "image";
+        row.dataset.jobStartedAt = String(startedAt);
+        row.dataset.jobSizeLabel = sizeLabel;
+        const elapsed = Math.max(0, Math.round(Date.now() / 1000 - startedAt));
+        progress.textContent = `${sizeLabel} · ${elapsed}s`;
         const sub = document.createElement("div");
         sub.className = "job-frame-sub";
         sub.textContent = job.id || "Preparing job";
@@ -3751,7 +3756,9 @@
         revealedHistoryRow = null;
         if (!visibleHistoryRecords.length && !visibleJobs.length) {
           history.replaceChildren(Object.assign(document.createElement("div"), { className: "empty-state", style: "min-height:40px;font-size:11px;", textContent: "No gallery results yet" }));
-          updateSelectionUi(); return;
+          updateSelectionUi();
+          syncPlaceholderTicker();
+          return;
         }
         const fragment = document.createDocumentFragment();
         createHistoryColumns(getHistoryColumnCount()).forEach(column => fragment.append(column));
@@ -3767,6 +3774,7 @@
           historyPanel.scrollTop = previousScrollTop;
         }
         updateSelectionUi();
+        syncPlaceholderTicker();
         queueHistoryAppendCheck();
       }
       async function loadHistory() {
@@ -3963,9 +3971,33 @@
           .sort()
           .join("|");
       }
+      function tickJobPlaceholders() {
+        const now = Math.round(Date.now() / 1000);
+        const rows = history.querySelectorAll(".history-job-row");
+        rows.forEach(row => {
+          const startedAt = parseInt(row.dataset.jobStartedAt, 10);
+          if (!Number.isFinite(startedAt)) return;
+          const sizeLabel = row.dataset.jobSizeLabel || "image";
+          const elapsed = Math.max(0, now - startedAt);
+          const progress = row.querySelector(".job-frame-progress");
+          if (progress) progress.textContent = `${sizeLabel} · ${elapsed}s`;
+        });
+      }
+      function syncPlaceholderTicker() {
+        const hasPlaceholders = pendingHistoryJobs.size > 0;
+        if (hasPlaceholders && !placeholderTickTimer) {
+          placeholderTickTimer = setInterval(tickJobPlaceholders, 1000);
+        } else if (!hasPlaceholders && placeholderTickTimer) {
+          clearInterval(placeholderTickTimer);
+          placeholderTickTimer = null;
+        }
+      }
       function renderHistoryIfJobsChanged() {
         const sig = pendingJobsSignature();
-        if (sig === lastPendingJobsSignature) return;
+        if (sig === lastPendingJobsSignature) {
+          syncPlaceholderTicker();
+          return;
+        }
         lastPendingJobsSignature = sig;
         renderHistory(allHistoryRecords, { keepRenderedCount: renderedHistoryCount, preserveScroll: true });
       }
