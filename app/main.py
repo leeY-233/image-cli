@@ -119,6 +119,10 @@ MAX_IMAGE_PIXELS = 3840 * 2160
 MAX_EDIT_UPLOAD_BYTES = 50 * 1024 * 1024
 MAX_EDIT_SOURCE_IMAGES = 16
 MAX_IMAGE_COUNT = 5
+DEFAULT_GALLERY_ID = "default"
+DEFAULT_GALLERY_NAME = "默认画廊"
+MAX_GALLERIES = 50
+MAX_GALLERY_NAME_LENGTH = 60
 SUPPORTED_EDIT_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp"}
 THUMBNAIL_MAX_EDGE = 1024
 THUMBNAIL_QUALITY = 92
@@ -183,6 +187,7 @@ if not (settings.app_password and settings.session_secret):
 class GenerateImageRequest(BaseModel):
     prompt: str = Field(..., min_length=1, max_length=8000)
     provider_id: str | None = None
+    gallery_id: str | None = None
     model: str | None = None
     size: str | None = None
     quality: str | None = None
@@ -363,7 +368,11 @@ def _get_provider(provider_id: str | None) -> ProviderConfig:
 
 
 def _provider_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in payload.items() if key != "provider_id"}
+    return {
+        key: value
+        for key, value in payload.items()
+        if key not in {"provider_id", "gallery_id"}
+    }
 
 
 @contextmanager
@@ -716,6 +725,81 @@ def _jobs_path() -> Path:
     return settings.output_dir / "jobs.json"
 
 
+def _galleries_path() -> Path:
+    return settings.output_dir / "galleries.json"
+
+
+def _normalize_galleries(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen_ids: set[str] = set()
+    normalized: list[dict[str, Any]] = []
+    has_default = False
+    now = int(time.time())
+    for record in records:
+        gallery_id = _safe_provider_id(record.get("id"), "")
+        if not gallery_id or gallery_id in seen_ids:
+            continue
+        name = str(record.get("name") or gallery_id).strip() or gallery_id
+        created_at = _safe_int(record.get("created_at"), now)
+        seen_ids.add(gallery_id)
+        if gallery_id == DEFAULT_GALLERY_ID:
+            has_default = True
+        normalized.append(
+            {
+                "id": gallery_id,
+                "name": name,
+                "created_at": created_at,
+            }
+        )
+    if not has_default:
+        normalized.insert(
+            0,
+            {
+                "id": DEFAULT_GALLERY_ID,
+                "name": DEFAULT_GALLERY_NAME,
+                "created_at": now,
+            },
+        )
+    # Default gallery first, then by created_at ascending.
+    normalized.sort(
+        key=lambda item: (
+            0 if item["id"] == DEFAULT_GALLERY_ID else 1,
+            _safe_int(item.get("created_at")),
+            str(item.get("name") or ""),
+        )
+    )
+    return normalized
+
+
+def _load_galleries() -> list[dict[str, Any]]:
+    path = _galleries_path()
+    with _json_file_lock(path, exclusive=True):
+        records = _read_json_list_unlocked(path)
+        normalized = _normalize_galleries(records)
+        if normalized != records:
+            _write_json_list_unlocked(path, normalized)
+        return normalized
+
+
+def _gallery_public(gallery: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "id": gallery.get("id", ""),
+        "name": gallery.get("name", ""),
+        "created_at": _safe_int(gallery.get("created_at")),
+    }
+
+
+def _resolve_gallery_id(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return DEFAULT_GALLERY_ID
+    galleries = _load_galleries()
+    if not any(g["id"] == text for g in galleries):
+        raise HTTPException(
+            status_code=400, detail=f"Gallery '{text}' is not configured"
+        )
+    return text
+
+
 def _load_jobs() -> list[dict[str, Any]]:
     path = _jobs_path()
     with _json_file_lock(path, exclusive=False):
@@ -1023,6 +1107,8 @@ def _normalize_history_record(record: dict[str, Any]) -> dict[str, Any]:
     normalized.setdefault("error", None)
     normalized.setdefault("status_code", None)
     normalized.setdefault("created_at", 0)
+    raw_gallery_id = str(normalized.get("gallery_id") or "").strip()
+    normalized["gallery_id"] = raw_gallery_id or DEFAULT_GALLERY_ID
     metadata = _history_file_metadata(str(normalized.get("file") or ""))
     if normalized.get("file_size_bytes") is None:
         normalized["file_size_bytes"] = metadata["file_size_bytes"]
@@ -1048,8 +1134,31 @@ def _sort_history_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]
     return normalized
 
 
+def _apply_history_limit(
+    records: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Keep at most HISTORY_LIMIT records per gallery, preserve original order.
+
+    Records must already be sorted in newest-first order.
+    """
+    gallery_counts: dict[str, int] = {}
+    kept: list[dict[str, Any]] = []
+    overflow: list[dict[str, Any]] = []
+    for record in records:
+        gallery_id = str(record.get("gallery_id") or DEFAULT_GALLERY_ID)
+        count = gallery_counts.get(gallery_id, 0)
+        if count < HISTORY_LIMIT:
+            kept.append(record)
+            gallery_counts[gallery_id] = count + 1
+        else:
+            overflow.append(record)
+    return kept, overflow
+
+
 def _normalize_history_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return _sort_history_records(records)[:HISTORY_LIMIT]
+    sorted_records = _sort_history_records(records)
+    kept, _ = _apply_history_limit(sorted_records)
+    return kept
 
 
 def _load_history() -> list[dict[str, Any]]:
@@ -1076,6 +1185,7 @@ def _history_public(record: dict[str, Any]) -> dict[str, Any]:
         "model": record.get("model", ""),
         "provider_id": record.get("provider_id", ""),
         "provider_name": record.get("provider_name", ""),
+        "gallery_id": record.get("gallery_id", DEFAULT_GALLERY_ID),
         "operation": record.get("operation", "generate"),
         "source_file": record.get("source_file"),
         "source_history_id": record.get("source_history_id"),
@@ -1121,8 +1231,7 @@ def _append_history(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
             seen.add(dedupe_key)
             deduped.append(record)
         deduped = _sort_history_records(deduped)
-        kept = deduped[:HISTORY_LIMIT]
-        overflow = deduped[HISTORY_LIMIT:]
+        kept, overflow = _apply_history_limit(deduped)
         job_file_references = _job_file_references() if overflow else set()
         history_file_references = _history_file_references(kept) if overflow else set()
         for record in overflow:
@@ -1243,6 +1352,39 @@ def _delete_history_items(history_ids: list[str]) -> int:
             )
         _write_json_list_unlocked(path, kept)
         return len(removed)
+
+
+def _move_history_items(history_ids: list[str], target_gallery_id: str) -> int:
+    target_id = _resolve_gallery_id(target_gallery_id)
+    wanted_ids = {str(item) for item in history_ids if item}
+    if not wanted_ids:
+        return 0
+
+    path = _history_path()
+    moved = 0
+    with _json_file_lock(path, exclusive=True):
+        sorted_records = _sort_history_records(_read_json_list_unlocked(path))
+        for record in sorted_records:
+            if str(record.get("id")) not in wanted_ids:
+                continue
+            current_gallery = str(record.get("gallery_id") or DEFAULT_GALLERY_ID)
+            if current_gallery == target_id:
+                continue
+            record["gallery_id"] = target_id
+            moved += 1
+        kept, overflow = _apply_history_limit(sorted_records)
+        if overflow:
+            job_file_references = _job_file_references()
+            history_file_references = _history_file_references(kept)
+            for record in overflow:
+                _delete_history_file(
+                    record,
+                    preserve_job_references=True,
+                    job_file_references=job_file_references,
+                    history_file_references=history_file_references,
+                )
+        _write_json_list_unlocked(path, kept)
+    return moved
 
 
 def _history_image_path(record: dict[str, Any]) -> Path | None:
@@ -1470,9 +1612,18 @@ def serve_file(filename: str, request: Request) -> FileResponse:
 
 
 @app.get("/v1/history")
-def history(request: Request) -> dict[str, list[dict[str, Any]]]:
+def history(
+    request: Request, gallery_id: str | None = None
+) -> dict[str, list[dict[str, Any]]]:
     _require_auth(request)
-    return {"images": [_history_public(record) for record in _load_history()]}
+    records = _load_history()
+    if gallery_id:
+        records = [
+            record
+            for record in records
+            if str(record.get("gallery_id") or DEFAULT_GALLERY_ID) == gallery_id
+        ]
+    return {"images": [_history_public(record) for record in records]}
 
 
 @app.get("/v1/providers")
@@ -1483,6 +1634,131 @@ def providers(request: Request) -> dict[str, Any]:
         "providers": provider_list,
         "default_provider_id": provider_list[0]["id"] if provider_list else "",
     }
+
+
+@app.get("/v1/galleries")
+def list_galleries(request: Request) -> dict[str, Any]:
+    _require_auth(request)
+    gallery_list = [_gallery_public(gallery) for gallery in _load_galleries()]
+    return {
+        "galleries": gallery_list,
+        "default_gallery_id": DEFAULT_GALLERY_ID,
+    }
+
+
+@app.post("/v1/galleries")
+async def create_gallery(request: Request) -> dict[str, Any]:
+    _require_auth(request)
+    body = await request.json()
+    name = str(body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="画廊名称不能为空")
+    if len(name) > MAX_GALLERY_NAME_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"画廊名称最多 {MAX_GALLERY_NAME_LENGTH} 个字符",
+        )
+
+    path = _galleries_path()
+    with _json_file_lock(path, exclusive=True):
+        galleries = _normalize_galleries(_read_json_list_unlocked(path))
+        if len(galleries) >= MAX_GALLERIES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"最多只能创建 {MAX_GALLERIES} 个画廊",
+            )
+        if any(gallery["name"] == name for gallery in galleries):
+            raise HTTPException(status_code=400, detail=f"画廊 “{name}” 已存在")
+
+        existing_ids = {gallery["id"] for gallery in galleries}
+        gallery_id = uuid.uuid4().hex[:12]
+        while gallery_id in existing_ids or gallery_id == DEFAULT_GALLERY_ID:
+            gallery_id = uuid.uuid4().hex[:12]
+
+        new_gallery = {
+            "id": gallery_id,
+            "name": name,
+            "created_at": int(time.time()),
+        }
+        galleries.append(new_gallery)
+        _write_json_list_unlocked(path, _normalize_galleries(galleries))
+    _log_event("gallery_created", gallery_id=gallery_id, name=name)
+    return _gallery_public(new_gallery)
+
+
+@app.patch("/v1/galleries/{gallery_id}")
+async def rename_gallery(gallery_id: str, request: Request) -> dict[str, Any]:
+    _require_auth(request)
+    body = await request.json()
+    name = str(body.get("name") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="画廊名称不能为空")
+    if len(name) > MAX_GALLERY_NAME_LENGTH:
+        raise HTTPException(
+            status_code=400,
+            detail=f"画廊名称最多 {MAX_GALLERY_NAME_LENGTH} 个字符",
+        )
+
+    path = _galleries_path()
+    with _json_file_lock(path, exclusive=True):
+        galleries = _normalize_galleries(_read_json_list_unlocked(path))
+        target = next((gallery for gallery in galleries if gallery["id"] == gallery_id), None)
+        if target is None:
+            raise HTTPException(status_code=404, detail="画廊不存在")
+        if any(
+            gallery["id"] != gallery_id and gallery["name"] == name
+            for gallery in galleries
+        ):
+            raise HTTPException(status_code=400, detail=f"画廊 “{name}” 已存在")
+        target["name"] = name
+        _write_json_list_unlocked(path, _normalize_galleries(galleries))
+    _log_event("gallery_renamed", gallery_id=gallery_id, name=name)
+    return _gallery_public(target)
+
+
+@app.delete("/v1/galleries/{gallery_id}")
+def delete_gallery(gallery_id: str, request: Request) -> dict[str, Any]:
+    _require_auth(request)
+    if gallery_id == DEFAULT_GALLERY_ID:
+        raise HTTPException(status_code=400, detail="默认画廊不能删除")
+
+    history_path = _history_path()
+    deleted_count = 0
+    with _json_file_lock(history_path, exclusive=True):
+        records = _normalize_history_records(_read_json_list_unlocked(history_path))
+        kept: list[dict[str, Any]] = []
+        removed: list[dict[str, Any]] = []
+        for record in records:
+            record_gallery = str(record.get("gallery_id") or DEFAULT_GALLERY_ID)
+            if record_gallery == gallery_id:
+                removed.append(record)
+            else:
+                kept.append(record)
+        if removed:
+            history_file_references = _history_file_references(kept)
+            for record in removed:
+                _delete_history_file(
+                    record,
+                    history_file_references=history_file_references,
+                )
+            _write_json_list_unlocked(history_path, kept)
+            deleted_count = len(removed)
+
+    galleries_path = _galleries_path()
+    with _json_file_lock(galleries_path, exclusive=True):
+        galleries = _normalize_galleries(_read_json_list_unlocked(galleries_path))
+        next_galleries = [gallery for gallery in galleries if gallery["id"] != gallery_id]
+        if len(next_galleries) == len(galleries):
+            raise HTTPException(status_code=404, detail="画廊不存在")
+        _write_json_list_unlocked(
+            galleries_path, _normalize_galleries(next_galleries)
+        )
+    _log_event(
+        "gallery_deleted",
+        gallery_id=gallery_id,
+        deleted_history=deleted_count,
+    )
+    return {"ok": True, "deleted_history": deleted_count}
 
 
 @app.get("/v1/history/{history_id}")
@@ -1513,6 +1789,29 @@ async def delete_history_batch(request: Request) -> dict[str, int | bool]:
     return {"ok": True, "deleted": deleted}
 
 
+@app.post("/v1/history/move")
+async def move_history_batch(request: Request) -> dict[str, Any]:
+    _require_auth(request)
+    body = await request.json()
+    raw_ids = body.get("ids", [])
+    raw_gallery_id = body.get("gallery_id", "")
+    if not isinstance(raw_ids, list):
+        raise HTTPException(status_code=400, detail="ids must be a list")
+    if not isinstance(raw_gallery_id, str) or not raw_gallery_id.strip():
+        raise HTTPException(status_code=400, detail="gallery_id is required")
+    history_ids = [str(item) for item in raw_ids if str(item).strip()]
+    if not history_ids:
+        raise HTTPException(status_code=400, detail="ids must not be empty")
+    moved = _move_history_items(history_ids, raw_gallery_id.strip())
+    _log_event(
+        "history_moved",
+        gallery_id=raw_gallery_id.strip(),
+        moved=moved,
+        requested=len(history_ids),
+    )
+    return {"ok": True, "moved": moved, "gallery_id": raw_gallery_id.strip()}
+
+
 @app.post("/v1/history/download")
 async def download_history_batch(request: Request) -> FileResponse:
     _require_auth(request)
@@ -1536,6 +1835,7 @@ def _payload_from_request(request: GenerateImageRequest) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "model": request.model or settings.model,
         "provider_id": request.provider_id or "",
+        "gallery_id": _resolve_gallery_id(request.gallery_id),
         "prompt": request.prompt,
         "size": size,
         "quality": request.quality or settings.image_quality,
@@ -1563,6 +1863,7 @@ def _parse_extra_json(extra: str | None) -> dict[str, Any]:
 def _payload_from_edit_form(
     prompt: str,
     provider_id: str | None,
+    gallery_id: str | None,
     model: str | None,
     size: str | None,
     quality: str | None,
@@ -1585,6 +1886,7 @@ def _payload_from_edit_form(
     payload: dict[str, Any] = {
         "model": model or settings.model,
         "provider_id": provider_id or "",
+        "gallery_id": _resolve_gallery_id(gallery_id),
         "prompt": prompt,
         "size": image_size,
         "quality": quality or settings.image_quality,
@@ -1820,6 +2122,7 @@ def _save_images_to_history(
     now = int(time.time())
     requested_quality = str(payload["quality"])
     effective_quality = str(provider_json.get("quality") or payload["quality"])
+    gallery_id = str(payload.get("gallery_id") or DEFAULT_GALLERY_ID)
     history_records = []
     for image in images:
         if not (image.file or image.url):
@@ -1842,6 +2145,7 @@ def _save_images_to_history(
                 "model": payload["model"],
                 "provider_id": payload.get("provider_id", ""),
                 "provider_name": provider_json.get("provider_name", ""),
+                "gallery_id": gallery_id,
                 "operation": operation,
                 "source_file": source_file,
                 "file_size_bytes": metadata["file_size_bytes"],
@@ -1881,6 +2185,7 @@ def _save_failure_to_history(
                 "model": payload.get("model", settings.model),
                 "provider_id": payload.get("provider_id", ""),
                 "provider_name": provider_name,
+                "gallery_id": str(payload.get("gallery_id") or DEFAULT_GALLERY_ID),
                 "operation": job.get("operation") or "generate",
                 "source_file": edit_inputs.get("source_file"),
                 "source_history_id": edit_inputs.get("source_history_id"),
@@ -1920,6 +2225,61 @@ def _provider_response_summary(provider_json: dict[str, Any]) -> dict[str, Any]:
     data = provider_json.get("data")
     summary["data_count"] = len(data) if isinstance(data, list) else 0
     return summary
+
+
+def _extract_provider_error_message(
+    provider_responses: list[dict[str, Any]],
+) -> str:
+    for response in provider_responses:
+        if not isinstance(response, dict):
+            continue
+        for field in ("error", "warning", "moderation", "detail", "message"):
+            value = response.get(field)
+            if not value:
+                continue
+            if isinstance(value, dict):
+                message = value.get("message") or value.get("detail") or ""
+                if message:
+                    return str(message)
+                return json.dumps(value, ensure_ascii=False)[:400]
+            if isinstance(value, str):
+                return value
+            return json.dumps(value, ensure_ascii=False, default=str)[:400]
+    return ""
+
+
+def _provider_no_images_detail(
+    payload: dict[str, Any],
+    provider_responses: list[dict[str, Any]],
+    operation: str,
+) -> dict[str, Any]:
+    inferred = _extract_provider_error_message(provider_responses)
+    summaries = [_provider_response_summary(response) for response in provider_responses]
+    return {
+        "error": {
+            "type": "ProviderNoImagesReturned",
+            "message": (
+                inferred
+                or (
+                    "Provider 返回 0 张图片。可能被内容审核拦截、触发安全策略、配额耗尽，"
+                    "或上游 provider 临时故障。请调整 prompt 或换一个 provider 后重试。"
+                )
+            ),
+            "hint": (
+                "上游 provider 在重试后仍未返回任何图片。常见原因：内容审核拒绝、安全策略命中、"
+                "上游配额或额度问题、provider 临时不稳定。可以换一个 provider 再试。"
+            ),
+        },
+        "request": {
+            "operation": operation,
+            "model": payload.get("model"),
+            "size": payload.get("size"),
+            "quality": payload.get("quality"),
+            "n": payload.get("n"),
+        },
+        "provider_request_count": len(provider_responses),
+        "provider_response_summaries": summaries,
+    }
 
 
 def _combine_provider_responses(
@@ -2271,6 +2631,20 @@ async def _execute_generation(
     if len(images) > requested_n:
         images = images[:requested_n]
 
+    usable_images = [image for image in images if image.file or image.url]
+    if not usable_images:
+        detail = _provider_no_images_detail(payload, provider_responses, "generate")
+        _log_event(
+            "generate_no_images_returned",
+            request_id=request_id,
+            provider_id=provider.id,
+            provider_name=provider.name,
+            elapsed_ms=_elapsed_ms(started_at),
+            detail=detail,
+        )
+        raise HTTPException(status_code=502, detail=detail)
+    images = usable_images
+
     provider_json = _combine_provider_responses(provider_responses, provider_payload, len(images))
     provider_json["provider_id"] = provider.id
     provider_json["provider_name"] = provider.name
@@ -2375,6 +2749,20 @@ async def _execute_edit(
         )
     provider_json["provider_id"] = provider.id
     provider_json["provider_name"] = provider.name
+
+    usable_images = [image for image in images if image.file or image.url]
+    if not usable_images:
+        detail = _provider_no_images_detail(payload, [provider_json], "edit")
+        _log_event(
+            "edit_no_images_returned",
+            request_id=request_id,
+            provider_id=provider.id,
+            provider_name=provider.name,
+            elapsed_ms=_elapsed_ms(started_at),
+            detail=detail,
+        )
+        raise HTTPException(status_code=502, detail=detail)
+    images = usable_images
 
     source_file = source_file or (
         _save_uploaded_source_copy(source_images[0]) if source_images else None
@@ -2556,6 +2944,7 @@ async def create_edit_job(
     mask: UploadFile | None = File(default=None),
     prompt: str = Form(...),
     provider_id: str | None = Form(default=None),
+    gallery_id: str | None = Form(default=None),
     model: str | None = Form(default=None),
     size: str | None = Form(default=None),
     quality: str | None = Form(default=None),
@@ -2571,6 +2960,7 @@ async def create_edit_job(
     payload = _payload_from_edit_form(
         prompt=prompt,
         provider_id=provider_id,
+        gallery_id=gallery_id,
         model=model,
         size=size,
         quality=quality,
@@ -2662,6 +3052,7 @@ async def edit_image(
     mask: UploadFile | None = File(default=None),
     prompt: str = Form(...),
     provider_id: str | None = Form(default=None),
+    gallery_id: str | None = Form(default=None),
     model: str | None = Form(default=None),
     size: str | None = Form(default=None),
     quality: str | None = Form(default=None),
@@ -2677,6 +3068,7 @@ async def edit_image(
     payload = _payload_from_edit_form(
         prompt=prompt,
         provider_id=provider_id,
+        gallery_id=gallery_id,
         model=model,
         size=size,
         quality=quality,
