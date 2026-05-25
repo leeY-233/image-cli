@@ -2538,7 +2538,7 @@
       .ui-dialog-backdrop {
         position: fixed;
         inset: 0;
-        z-index: 1000;
+        z-index: 1200;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -2724,6 +2724,264 @@
       .history-panel::-webkit-scrollbar-thumb:active {
         background-color: var(--text-muted, rgba(255, 255, 255, 0.4));
       }
+
+      /* ─── Drag-and-drop on history rows ─── */
+      .history-row {
+        touch-action: pan-y;
+        user-select: none;
+        -webkit-user-select: none;
+        -webkit-user-drag: none;
+        -khtml-user-drag: none;
+        -moz-user-drag: none;
+        -o-user-drag: none;
+      }
+      .history-row * {
+        -webkit-user-drag: none;
+        -khtml-user-drag: none;
+        -moz-user-drag: none;
+        -o-user-drag: none;
+      }
+      .history-row img { -webkit-user-drag: none; user-drag: none; }
+      body.is-dragging { cursor: grabbing; overflow: hidden; touch-action: none; }
+      body.is-dragging .history-row { touch-action: none; }
+      body.is-dragging .history-panel { overscroll-behavior: none; overflow: hidden; }
+      .history-row-dragging {
+        opacity: 0.2;
+        background: rgba(0, 0, 0, 0.4) !important;
+        border-color: transparent !important;
+        pointer-events: none;
+      }
+      .history-row-dragging * {
+        visibility: hidden;
+      }
+      .drag-overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 950;
+        pointer-events: none;
+        display: none;
+      }
+      .drag-overlay[hidden] { display: none; }
+      body.is-dragging .drag-overlay { display: block; }
+      .drag-overlay-backdrop { display: none; }
+      /* Only blur the sidebar/composer area during drag */
+      body.is-dragging .sidebar {
+        filter: blur(12px) saturate(0.8);
+        pointer-events: none;
+        transition: filter 0.2s ease;
+      }
+      /* Keep the gallery panel sharp above everything */
+      body.is-dragging .history-panel {
+        position: relative;
+        z-index: 960;
+      }
+      .drag-targets-frame {
+        position: fixed;
+        left: 50%;
+        bottom: max(env(safe-area-inset-bottom, 0px), 16px);
+        transform: translateX(-50%);
+        max-width: min(680px, 92vw);
+        padding: 14px 16px 12px;
+        border-radius: 20px;
+        background: rgba(24, 24, 27, 0.88);
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        box-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.04);
+        pointer-events: auto;
+        z-index: 970;
+      }
+      .drag-targets-title {
+        text-align: center;
+        font-size: 12px;
+        font-weight: 650;
+        letter-spacing: 0.06em;
+        color: var(--text-dim);
+        text-transform: uppercase;
+        margin-bottom: 12px;
+      }
+      .drag-targets {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: center;
+        max-width: 100%;
+      }
+      .drag-target {
+        flex: 0 0 auto;
+        min-width: 132px;
+        max-width: 220px;
+        padding: 14px 18px;
+        display: grid;
+        gap: 6px;
+        justify-items: center;
+        text-align: center;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 16px;
+        color: var(--text-secondary);
+        font-size: 12.5px;
+        font-weight: 650;
+        transition: transform 0.16s ease, background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease, box-shadow 0.16s ease;
+      }
+      @media (max-width: 480px) {
+        .drag-targets-frame { padding: 14px 14px 12px; max-width: 96vw; }
+        .drag-target { min-width: 120px; padding: 12px 14px; }
+      }
+      .drag-target.is-active {
+        transform: translateY(-3px) scale(1.05);
+        background: var(--accent-subtle, rgba(139, 92, 246, 0.22));
+        border-color: var(--accent, #8b5cf6);
+        color: #fff;
+        box-shadow: 0 18px 38px -10px rgba(139, 92, 246, 0.6), 0 0 0 3px var(--accent-glow, rgba(139, 92, 246, 0.32));
+      }
+      .drag-target-danger.is-active {
+        background: rgba(239, 68, 68, 0.22);
+        border-color: var(--danger, #ef4444);
+        color: #fff;
+        box-shadow: 0 18px 38px -10px rgba(239, 68, 68, 0.6), 0 0 0 3px rgba(239, 68, 68, 0.32);
+      }
+      .drag-target-icon { display: inline-flex; align-items: center; justify-content: center; color: var(--text); }
+      .drag-target.is-active .drag-target-icon { color: #fff; }
+      .drag-target-label { font-size: 13px; font-weight: 700; line-height: 1.2; word-break: break-word; }
+      .drag-target-hint { font-size: 11px; color: var(--text-muted); }
+      .drag-target.is-active .drag-target-hint { color: rgba(255, 255, 255, 0.85); }
+      @keyframes dragOverlayFade {
+        from { opacity: 0; transform: scale(0.985); }
+        to { opacity: 1; transform: scale(1); }
+      }
+      .drag-ghost {
+        position: fixed;
+        left: 0;
+        top: 0;
+        z-index: 1100;
+        pointer-events: none;
+        width: 110px;
+        height: 110px;
+        margin: -55px 0 0 -55px;
+        border-radius: 18px;
+        overflow: hidden;
+        background: var(--bg-solid-card, #18181b);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.08);
+        transform: translate(-9999px, -9999px);
+        will-change: transform;
+      }
+      .drag-ghost[hidden] { display: none; }
+      .drag-ghost img { width: 100%; height: 100%; object-fit: cover; pointer-events: none; }
+      .drag-ghost-fallback {
+        display: flex; align-items: center; justify-content: center;
+        width: 100%; height: 100%;
+        font-size: 11px; color: var(--text-muted);
+      }
+
+      /* ─── Trash modal ─── */
+      .trash-modal {
+        position: fixed;
+        inset: 0;
+        z-index: 1050;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        background: rgba(0, 0, 0, 0.55);
+        backdrop-filter: blur(14px) saturate(1.08);
+        -webkit-backdrop-filter: blur(14px) saturate(1.08);
+        animation: uiDialogFade 0.16s ease;
+      }
+      .trash-modal[hidden] { display: none; }
+      .trash-panel {
+        width: min(720px, 100%);
+        max-height: min(80vh, 720px);
+        display: flex;
+        flex-direction: column;
+        background: var(--bg-card, var(--bg-solid-card, #18181b));
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        box-shadow: var(--shadow);
+        overflow: hidden;
+      }
+      .trash-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 18px 22px 12px;
+      }
+      .trash-head h3 { margin: 0; font-size: 15px; font-weight: 800; color: var(--text); }
+      .trash-subtitle { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+      .trash-settings {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        padding: 6px 22px 12px;
+        font-size: 12px;
+        color: var(--text-secondary);
+      }
+      .trash-retention-input {
+        width: 80px;
+        min-height: 30px;
+        padding: 4px 10px;
+        background: var(--bg-input);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        color: var(--text);
+        font-size: 13px;
+        outline: none;
+      }
+      .trash-retention-input:focus {
+        border-color: var(--border-focus, var(--accent));
+        box-shadow: 0 0 0 3px var(--accent-glow, rgba(139, 92, 246, 0.18));
+      }
+      .trash-settings-hint { color: var(--text-muted); font-size: 11px; }
+      .trash-settings-msg { color: var(--accent-light); font-size: 12px; }
+      .trash-list {
+        flex: 1 1 auto;
+        min-height: 120px;
+        max-height: 60vh;
+        overflow-y: auto;
+        padding: 4px 14px;
+        display: grid;
+        gap: 6px;
+      }
+      .trash-empty {
+        text-align: center;
+        color: var(--text-muted);
+        padding: 36px 0;
+        font-size: 13px;
+      }
+      .trash-row {
+        display: grid;
+        grid-template-columns: 56px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 10px;
+        padding: 8px 8px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+      }
+      .trash-thumb {
+        width: 56px; height: 56px; border-radius: 10px;
+        background: var(--bg-input, rgba(0, 0, 0, 0.3));
+        overflow: hidden;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 18px; color: var(--text-muted);
+      }
+      .trash-thumb img { width: 100%; height: 100%; object-fit: cover; }
+      .trash-info { min-width: 0; display: grid; gap: 2px; }
+      .trash-prompt { font-size: 12px; color: var(--text-secondary); white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+      .trash-meta { font-size: 11px; color: var(--text-muted); white-space: nowrap; text-overflow: ellipsis; overflow: hidden; }
+      .trash-row-actions { display: flex; gap: 4px; }
+      .trash-foot {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 10px 22px 16px;
+        border-top: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.06));
+      }
+      .trash-count { font-size: 12px; color: var(--text-muted); }
+      .trash-actions { display: flex; gap: 6px; }
+
     </style>
   </head>
   <body>
@@ -2967,6 +3225,9 @@
             </div>
             <div class="history-actions">
               <span class="history-count" id="historyCount">--</span>
+              <button class="mini-btn" id="openTrashBtn" type="button" title="打开回收站">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:-2px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>回收站
+              </button>
               <button class="mini-btn" id="selectAllHistory" type="button" hidden>Select All</button>
               <button class="mini-btn" id="selectHistory" type="button">Select</button>
               <button class="mini-btn" id="moveSelected" type="button" hidden>Move</button>
@@ -3016,6 +3277,45 @@
           <button class="ui-dialog-btn ui-dialog-confirm" id="uiDialogConfirm" type="submit">确定</button>
         </div>
       </form>
+    </div>
+
+    <div class="drag-overlay" id="dragOverlay" hidden>
+      <div class="drag-overlay-backdrop"></div>
+      <div class="drag-targets-frame">
+        <div class="drag-targets-title">把图片拖到目标上松开</div>
+        <div class="drag-targets" id="dragTargets"></div>
+      </div>
+    </div>
+
+    <div class="drag-ghost" id="dragGhost" hidden></div>
+
+    <div class="trash-modal" id="trashModal" role="dialog" aria-modal="true" aria-labelledby="trashTitle" hidden>
+      <div class="trash-panel">
+        <div class="trash-head">
+          <div>
+            <h3 id="trashTitle">回收站</h3>
+            <div class="trash-subtitle" id="trashSubtitle">超过保留期会自动彻底删除并清理本地图片。</div>
+          </div>
+          <button class="mini-btn" id="trashCloseBtn" type="button">关闭</button>
+        </div>
+        <div class="trash-settings">
+          <label for="trashRetentionInput">保留天数</label>
+          <input class="trash-retention-input" id="trashRetentionInput" type="number" min="1" max="365" step="1" value="3" />
+          <button class="mini-btn" id="trashRetentionSave" type="button">保存</button>
+          <span class="trash-settings-hint">范围 1 ~ 365 天</span>
+          <span class="trash-settings-msg" id="trashRetentionMsg" hidden></span>
+        </div>
+        <div class="trash-list" id="trashList">
+          <div class="trash-empty">回收站是空的</div>
+        </div>
+        <div class="trash-foot">
+          <div class="trash-count" id="trashCount"></div>
+          <div class="trash-actions">
+            <button class="mini-btn" id="trashRefreshBtn" type="button">刷新</button>
+            <button class="mini-btn" id="trashEmptyBtn" type="button" style="border-color:var(--danger-border);color:var(--danger);">清空回收站</button>
+          </div>
+        </div>
+      </div>
     </div>
 
     <script>
@@ -3537,11 +3837,6 @@
       async function setGallery(id) {
         if (!id) id = DEFAULT_GALLERY_ID;
         if (!galleries.find(gallery => gallery.id === id)) return;
-        if (selectedGalleryId === id) {
-          renderGalleryTabs();
-          scrollActiveGalleryTabIntoView();
-          return;
-        }
         selectedGalleryId = id;
         localStorage.setItem(galleryStorageKey, id);
         renderGalleryTabs();
@@ -4301,6 +4596,7 @@
       function createHistoryRow(record) {
         const row = document.createElement("div");
         row.className = "history-row";
+        if (record.id) row.dataset.historyId = record.id;
         const check = document.createElement("input");
         check.type = "checkbox"; check.className = "history-check"; check.dataset.historyId = record.id;
         check.checked = selectedHistoryIds.has(record.id);
@@ -4318,6 +4614,7 @@
           img.alt = record.prompt || "history image";
           img.loading = "lazy";
           img.decoding = "async";
+          img.draggable = false;
           if (record.thumbnail_width) img.width = record.thumbnail_width;
           if (record.thumbnail_height) img.height = record.thumbnail_height;
           const reserveWidth = record.thumbnail_width || record.image_width;
@@ -4381,6 +4678,7 @@
         actions.append(del);
         row.append(check, info, actions);
         row.addEventListener("click", () => {
+          if (dragJustFinished) return;
           if (selectingHistory) { check.checked = !check.checked; check.checked ? selectedHistoryIds.add(record.id) : selectedHistoryIds.delete(record.id); updateSelectionUi(); return; }
           openModal(record);
         });
@@ -4993,6 +5291,528 @@
       form.querySelector('[name="n"]').value = "1";
       syncCompactControls();
       setMode("generate");
+
+      // ─── Drag-and-drop on history rows ───
+      const dragOverlay = document.querySelector("#dragOverlay");
+      const dragTargetsEl = document.querySelector("#dragTargets");
+      const dragGhost = document.querySelector("#dragGhost");
+      const DRAG_HOLD_MS = 220;
+      const DRAG_HOLD_TOLERANCE = 12;
+      const DRAG_MOUSE_THRESHOLD = 3;
+      let dragState = null;
+      let dragTargetEls = [];
+      let dragJustFinished = false;
+
+      function findHistoryRow(target) {
+        if (!(target instanceof Element)) return null;
+        const row = target.closest(".history-row");
+        if (!row || row.classList.contains("history-job-row")) return null;
+        return row;
+      }
+      function isInteractiveTarget(target) {
+        if (!(target instanceof Element)) return false;
+        return !!target.closest("button, a, input, label, select, textarea, .history-actions, .history-check, .history-delete");
+      }
+      function buildDragGhost(record) {
+        dragGhost.replaceChildren();
+        const src = record?.thumbnail_file || record?.file || record?.url;
+        if (src) {
+          const img = document.createElement("img");
+          img.src = src;
+          img.alt = "";
+          img.draggable = false;
+          dragGhost.append(img);
+        } else {
+          const fallback = document.createElement("div");
+          fallback.className = "drag-ghost-fallback";
+          fallback.textContent = "拖动中";
+          dragGhost.append(fallback);
+        }
+      }
+      function moveDragGhost(x, y) {
+        dragGhost.style.transform = `translate(${x}px, ${y}px)`;
+      }
+      function clearDropHighlights() {
+        dragTargetEls.forEach(el => el.classList.remove("is-active"));
+      }
+      function detectDropTarget(x, y) {
+        for (const el of dragTargetEls) {
+          const rect = el.getBoundingClientRect();
+          if (x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom) {
+            return {
+              kind: "target",
+              el,
+              target: el.dataset.target,
+              galleryId: el.dataset.galleryId || "",
+            };
+          }
+        }
+        return null;
+      }
+      function buildDragTargets() {
+        if (!dragTargetsEl) return;
+        dragTargetsEl.replaceChildren();
+        (galleries || []).forEach(gallery => {
+          if (gallery.id === selectedGalleryId) return;
+          const el = document.createElement("div");
+          el.className = "drag-target";
+          el.dataset.target = "gallery";
+          el.dataset.galleryId = gallery.id;
+          const icon = document.createElement("span");
+          icon.className = "drag-target-icon";
+          icon.setAttribute("aria-hidden", "true");
+          icon.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z"/><path d="M3 11h18"/></svg>';
+          const label = document.createElement("span");
+          label.className = "drag-target-label";
+          label.textContent = gallery.name || gallery.id;
+          el.append(icon, label);
+          dragTargetsEl.append(el);
+        });
+        const trashEl = document.createElement("div");
+        trashEl.className = "drag-target drag-target-danger";
+        trashEl.dataset.target = "trash";
+        const tIcon = document.createElement("span");
+        tIcon.className = "drag-target-icon";
+        tIcon.setAttribute("aria-hidden", "true");
+        tIcon.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>';
+        const tLabel = document.createElement("span");
+        tLabel.className = "drag-target-label";
+        tLabel.textContent = "回收站";
+        const tHint = document.createElement("span");
+        tHint.className = "drag-target-hint";
+        tHint.textContent = `保留 ${trashRetentionDays || 3} 天`;
+        trashEl.append(tIcon, tLabel, tHint);
+        dragTargetsEl.append(trashEl);
+      }
+      function showDragOverlay() {
+        buildDragTargets();
+        dragOverlay.hidden = false;
+        dragTargetEls = Array.from(dragTargetsEl.querySelectorAll(".drag-target"));
+        document.body.classList.add("is-dragging");
+        document.addEventListener("touchmove", blockTouchMoveDuringDrag, { passive: false });
+      }
+      function hideDragOverlay() {
+        dragOverlay.hidden = true;
+        document.body.classList.remove("is-dragging");
+        clearDropHighlights();
+        dragTargetEls = [];
+        document.removeEventListener("touchmove", blockTouchMoveDuringDrag);
+      }
+      function blockTouchMoveDuringDrag(event) {
+        if (event.cancelable) event.preventDefault();
+      }
+      function startActualDrag(record, row, x, y) {
+        if (dragState && dragState.active) return;
+        if (!dragState) dragState = {};
+        dragState.active = true;
+        dragState.record = record;
+        dragState.row = row;
+        dragState.row.classList.add("history-row-dragging");
+        buildDragGhost(record);
+        dragGhost.hidden = false;
+        moveDragGhost(x, y);
+        showDragOverlay();
+      }
+      function cleanupDrag() {
+        if (dragState?.row) dragState.row.classList.remove("history-row-dragging");
+        if (dragState?.holdTimer) clearTimeout(dragState.holdTimer);
+        dragGhost.hidden = true;
+        dragGhost.replaceChildren();
+        hideDragOverlay();
+        if (dragState?.active) {
+          dragJustFinished = true;
+          setTimeout(() => { dragJustFinished = false; }, 50);
+        }
+        dragState = null;
+      }
+      async function finalizeDrop(record, drop) {
+        if (!record || !drop || drop.kind !== "target") return;
+        if (drop.target === "trash") {
+          await trashHistoryByDrag(record);
+          return;
+        }
+        if (drop.target === "gallery" && drop.galleryId) {
+          await moveHistoryByDragTo(record, drop.galleryId);
+        }
+      }
+      async function trashHistoryByDrag(record) {
+        try {
+          const res = await fetch("/v1/history/trash", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ids: [record.id] }),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || `HTTP ${res.status}`);
+          }
+        } catch (error) {
+          uiAlert(`放入回收站失败：${error.message}`, { title: "操作失败" });
+          return;
+        }
+        selectedHistoryIds.delete(record.id);
+        await loadHistory();
+      }
+      async function moveHistoryByDragTo(record, galleryId) {
+        try {
+          const res = await fetch("/v1/history/move", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ids: [record.id], gallery_id: galleryId }),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || `HTTP ${res.status}`);
+          }
+        } catch (error) {
+          uiAlert(`归档失败：${error.message}`, { title: "归档失败" });
+          return;
+        }
+        selectedHistoryIds.delete(record.id);
+        await loadHistory();
+      }
+
+      // Block the browser's native HTML5 drag inside the gallery.
+      history.addEventListener("dragstart", event => { event.preventDefault(); });
+      // Block long-press context menu on mobile (conflicts with our drag).
+      history.addEventListener("contextmenu", event => {
+        if (dragState) { event.preventDefault(); return; }
+        const row = findHistoryRow(event.target);
+        if (row) event.preventDefault();
+      });
+      // On iOS Safari, only a non-passive touchmove preventDefault() actually stops scrolling.
+      // We register this once and only block when our drag is active.
+      history.addEventListener("touchmove", event => {
+        if (dragState && (dragState.active || dragState.holdTimer)) {
+          if (event.cancelable) event.preventDefault();
+        }
+      }, { passive: false });
+
+      history.addEventListener("pointerdown", event => {
+        if (selectingHistory) return;
+        if (event.pointerType === "mouse" && event.button !== 0) return;
+        if (isInteractiveTarget(event.target)) return;
+        const row = findHistoryRow(event.target);
+        if (!row) return;
+        const recordId = row.dataset.historyId;
+        const record = visibleHistoryRecords.find(r => r.id === recordId);
+        if (!record) return;
+        // Block native drag + text selection immediately.
+        if (event.cancelable) event.preventDefault();
+        const startX = event.clientX;
+        const startY = event.clientY;
+        const isTouch = event.pointerType !== "mouse";
+        const pointerId = event.pointerId;
+        // Lock touch-action on the row so the browser doesn't claim the gesture for scroll/refresh.
+        if (isTouch) row.style.touchAction = "none";
+        dragState = {
+          active: false,
+          record,
+          row,
+          pointerId,
+          startX,
+          startY,
+          isTouch,
+          holdTimer: null,
+          drop: null,
+          lastX: startX,
+          lastY: startY,
+        };
+        if (isTouch) {
+          dragState.holdTimer = setTimeout(() => {
+            if (!dragState || dragState.active) return;
+            startActualDrag(record, row, dragState.lastX || startX, dragState.lastY || startY);
+            try { row.setPointerCapture(pointerId); } catch (_) {}
+          }, DRAG_HOLD_MS);
+        }
+        function restoreTouchAction() { row.style.touchAction = ""; }
+        function onMove(ev) {
+          if (!dragState) return;
+          dragState.lastX = ev.clientX;
+          dragState.lastY = ev.clientY;
+          if (dragState.active) {
+            if (ev.cancelable) ev.preventDefault();
+            moveDragGhost(ev.clientX, ev.clientY);
+            const drop = detectDropTarget(ev.clientX, ev.clientY);
+            dragState.drop = drop;
+            clearDropHighlights();
+            if (drop && drop.kind === "target") drop.el.classList.add("is-active");
+            return;
+          }
+          const moved = Math.hypot(ev.clientX - startX, ev.clientY - startY);
+          if (isTouch) {
+            if (moved > DRAG_HOLD_TOLERANCE) {
+              if (dragState.holdTimer) { clearTimeout(dragState.holdTimer); dragState.holdTimer = null; }
+              restoreTouchAction();
+              cleanupDrag();
+            }
+          } else if (moved > DRAG_MOUSE_THRESHOLD) {
+            startActualDrag(record, row, ev.clientX, ev.clientY);
+            try { row.setPointerCapture(pointerId); } catch (_) {}
+          }
+        }
+        async function onUp(ev) {
+          document.removeEventListener("pointermove", onMove, true);
+          document.removeEventListener("pointerup", onUp, true);
+          document.removeEventListener("pointercancel", onCancel, true);
+          restoreTouchAction();
+          if (!dragState) return;
+          if (dragState.active) {
+            const drop = detectDropTarget(ev.clientX, ev.clientY);
+            const rec = dragState.record;
+            cleanupDrag();
+            try { await finalizeDrop(rec, drop); } catch (e) { console.error(e); }
+          } else {
+            cleanupDrag();
+          }
+        }
+        function onCancel() {
+          document.removeEventListener("pointermove", onMove, true);
+          document.removeEventListener("pointerup", onUp, true);
+          document.removeEventListener("pointercancel", onCancel, true);
+          restoreTouchAction();
+          if (dragState) cleanupDrag();
+        }
+        document.addEventListener("pointermove", onMove, { passive: false, capture: true });
+        document.addEventListener("pointerup", onUp, true);
+        document.addEventListener("pointercancel", onCancel, true);
+      });
+
+      // ─── Recycle bin (回收站) ───
+      const trashModal = document.querySelector("#trashModal");
+      const trashList = document.querySelector("#trashList");
+      const trashCountEl = document.querySelector("#trashCount");
+      const trashRetentionInput = document.querySelector("#trashRetentionInput");
+      const trashRetentionMsg = document.querySelector("#trashRetentionMsg");
+      const trashRetentionSave = document.querySelector("#trashRetentionSave");
+      const trashCloseBtn = document.querySelector("#trashCloseBtn");
+      const trashEmptyBtn = document.querySelector("#trashEmptyBtn");
+      const trashRefreshBtn = document.querySelector("#trashRefreshBtn");
+      const openTrashBtn = document.querySelector("#openTrashBtn");
+      let trashRetentionDays = 3;
+      let trashRetentionMsgTimer = null;
+
+      function flashTrashRetentionMsg(text, ok = true) {
+        if (!trashRetentionMsg) return;
+        trashRetentionMsg.textContent = text;
+        trashRetentionMsg.style.color = ok ? "var(--accent-light, #a78bfa)" : "var(--danger)";
+        trashRetentionMsg.hidden = false;
+        if (trashRetentionMsgTimer) clearTimeout(trashRetentionMsgTimer);
+        trashRetentionMsgTimer = setTimeout(() => {
+          trashRetentionMsg.hidden = true;
+        }, 2400);
+      }
+      async function loadTrashSettings() {
+        try {
+          const res = await fetch("/v1/trash/settings");
+          if (!res.ok) return;
+          const data = await res.json();
+          trashRetentionDays = Number(data.retention_days) || 3;
+          if (trashRetentionInput) trashRetentionInput.value = String(trashRetentionDays);
+        } catch (_) {}
+      }
+      async function loadTrash() {
+        try {
+          const res = await fetch("/v1/trash");
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const data = await res.json();
+          trashRetentionDays = Number(data.retention_days) || trashRetentionDays;
+          if (trashRetentionInput) trashRetentionInput.value = String(trashRetentionDays);
+          renderTrash(data.items || []);
+        } catch (e) {
+          trashList.replaceChildren(Object.assign(document.createElement("div"), {
+            className: "trash-empty",
+            textContent: `加载回收站失败：${e.message}`,
+          }));
+        }
+      }
+      function formatTrashTimeLeft(record) {
+        const expires = Number(record.expires_at) || 0;
+        if (!expires) return "";
+        const now = Math.floor(Date.now() / 1000);
+        const diff = expires - now;
+        if (diff <= 0) return "即将清理";
+        const hours = Math.floor(diff / 3600);
+        if (hours >= 24) return `剩余 ${Math.floor(hours / 24)} 天`;
+        if (hours >= 1) return `剩余 ${hours} 小时`;
+        return `剩余 ${Math.max(1, Math.floor(diff / 60))} 分钟`;
+      }
+      function renderTrash(items) {
+        if (!items.length) {
+          trashList.replaceChildren(Object.assign(document.createElement("div"), {
+            className: "trash-empty",
+            textContent: "回收站是空的",
+          }));
+          trashCountEl.textContent = "";
+          return;
+        }
+        const galleryNames = Object.fromEntries((galleries || []).map(g => [g.id, g.name || g.id]));
+        const fragment = document.createDocumentFragment();
+        items.forEach(item => {
+          const row = document.createElement("div");
+          row.className = "trash-row";
+
+          const thumb = document.createElement("div");
+          thumb.className = "trash-thumb";
+          const src = item.thumbnail_file || item.file || item.url;
+          if (src) {
+            const img = document.createElement("img");
+            img.src = src;
+            img.alt = "";
+            img.loading = "lazy";
+            thumb.append(img);
+          } else {
+            thumb.textContent = item.status === "failed" ? "✗" : "—";
+          }
+
+          const info = document.createElement("div");
+          info.className = "trash-info";
+          const prompt = document.createElement("div");
+          prompt.className = "trash-prompt";
+          prompt.textContent = item.prompt || "(无 prompt)";
+          prompt.title = item.prompt || "";
+          const meta = document.createElement("div");
+          meta.className = "trash-meta";
+          const origin = galleryNames[item.original_gallery_id] || item.original_gallery_id || "默认画廊";
+          const deletedAt = item.deleted_at ? new Date(item.deleted_at * 1000).toLocaleString() : "";
+          const timeLeft = formatTrashTimeLeft(item);
+          meta.textContent = [
+            `来源：${origin}`,
+            deletedAt ? `删除于 ${deletedAt}` : "",
+            timeLeft,
+          ].filter(Boolean).join(" · ");
+          info.append(prompt, meta);
+
+          const actions = document.createElement("div");
+          actions.className = "trash-row-actions";
+          const restoreBtn = document.createElement("button");
+          restoreBtn.className = "mini-btn";
+          restoreBtn.type = "button";
+          restoreBtn.textContent = "恢复";
+          restoreBtn.addEventListener("click", () => restoreTrashItem(item.id));
+          const deleteBtn = document.createElement("button");
+          deleteBtn.className = "mini-btn";
+          deleteBtn.type = "button";
+          deleteBtn.textContent = "彻底删除";
+          deleteBtn.style.borderColor = "var(--danger-border)";
+          deleteBtn.style.color = "var(--danger)";
+          deleteBtn.addEventListener("click", () => permanentlyDeleteTrashItem(item.id, item.prompt || ""));
+          actions.append(restoreBtn, deleteBtn);
+
+          row.append(thumb, info, actions);
+          fragment.append(row);
+        });
+        trashList.replaceChildren(fragment);
+        trashCountEl.textContent = `共 ${items.length} 项`;
+      }
+      async function restoreTrashItem(id) {
+        try {
+          const res = await fetch("/v1/trash/restore", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ids: [id] }),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || `HTTP ${res.status}`);
+          }
+        } catch (e) {
+          uiAlert(`恢复失败：${e.message}`, { title: "操作失败" });
+          return;
+        }
+        await Promise.all([loadTrash(), loadHistory()]);
+      }
+      async function permanentlyDeleteTrashItem(id, prompt) {
+        const ok = await uiConfirm(
+          `彻底删除这条记录？关联的本地图片文件会被删除，无法恢复。\n${prompt ? `「${prompt.slice(0, 80)}${prompt.length > 80 ? "…" : ""}」` : ""}`,
+          { title: "彻底删除", confirmText: "彻底删除", danger: true }
+        );
+        if (!ok) return;
+        try {
+          const res = await fetch("/v1/trash/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ids: [id] }),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || `HTTP ${res.status}`);
+          }
+        } catch (e) {
+          uiAlert(`删除失败：${e.message}`, { title: "操作失败" });
+          return;
+        }
+        await loadTrash();
+      }
+      async function emptyTrash() {
+        const ok = await uiConfirm(
+          "确定要清空回收站？所有项目会被彻底删除并清理本地图片，无法恢复。",
+          { title: "清空回收站", confirmText: "清空", danger: true }
+        );
+        if (!ok) return;
+        try {
+          const res = await fetch("/v1/trash/empty", { method: "POST" });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || `HTTP ${res.status}`);
+          }
+        } catch (e) {
+          uiAlert(`清空失败：${e.message}`, { title: "操作失败" });
+          return;
+        }
+        await loadTrash();
+      }
+      async function saveTrashRetention() {
+        const value = parseInt(trashRetentionInput.value, 10);
+        if (!Number.isFinite(value) || value < 1 || value > 365) {
+          flashTrashRetentionMsg("范围 1 ~ 365 天", false);
+          return;
+        }
+        try {
+          const res = await fetch("/v1/trash/settings", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ retention_days: value }),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || `HTTP ${res.status}`);
+          }
+          const data = await res.json();
+          trashRetentionDays = Number(data.retention_days) || value;
+          flashTrashRetentionMsg(`已保存：保留 ${trashRetentionDays} 天`);
+          await loadTrash();
+        } catch (e) {
+          flashTrashRetentionMsg(`保存失败：${e.message}`, false);
+        }
+      }
+      function openTrashModal() {
+        trashModal.hidden = false;
+        loadTrash();
+      }
+      function closeTrashModal() { trashModal.hidden = true; }
+
+      if (openTrashBtn) openTrashBtn.addEventListener("click", openTrashModal);
+      if (trashCloseBtn) trashCloseBtn.addEventListener("click", closeTrashModal);
+      if (trashRefreshBtn) trashRefreshBtn.addEventListener("click", loadTrash);
+      if (trashEmptyBtn) trashEmptyBtn.addEventListener("click", emptyTrash);
+      if (trashRetentionSave) trashRetentionSave.addEventListener("click", saveTrashRetention);
+      if (trashRetentionInput) {
+        trashRetentionInput.addEventListener("keydown", e => {
+          if (e.key === "Enter") { e.preventDefault(); saveTrashRetention(); }
+        });
+      }
+      if (trashModal) {
+        trashModal.addEventListener("mousedown", event => {
+          if (event.target === trashModal) closeTrashModal();
+        });
+      }
+      window.addEventListener("keydown", event => {
+        if (event.key === "Escape" && !trashModal.hidden) {
+          closeTrashModal();
+        }
+      });
+
       loadProviders();
       window.addEventListener("beforeunload", clearEditPreviews);
       (async () => {
@@ -5000,6 +5820,7 @@
         await loadHistory();
         await resumeActiveJob();
         await refreshBgJobs();
+        await loadTrashSettings();
       })();
       jobsRefreshTimer = setInterval(refreshBgJobs, 10000);
     </script>

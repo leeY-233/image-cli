@@ -86,6 +86,9 @@ class Settings(BaseModel):
     max_active_jobs: int = Field(
         default_factory=lambda: _env_int("MAX_ACTIVE_JOBS", 10)
     )
+    trash_retention_days: int = Field(
+        default_factory=lambda: _env_int("TRASH_RETENTION_DAYS", 3)
+    )
     app_password: str = Field(default_factory=lambda: os.getenv("APP_PASSWORD", ""))
     admin_password: str = Field(default_factory=lambda: os.getenv("ADMIN_PASSWORD", ""))
     session_secret: str = Field(
@@ -123,6 +126,9 @@ DEFAULT_GALLERY_ID = "default"
 DEFAULT_GALLERY_NAME = "默认画廊"
 MAX_GALLERIES = 50
 MAX_GALLERY_NAME_LENGTH = 60
+TRASH_MIN_RETENTION_DAYS = 1
+TRASH_MAX_RETENTION_DAYS = 365
+TRASH_LIMIT = 1000
 SUPPORTED_EDIT_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp"}
 THUMBNAIL_MAX_EDGE = 1024
 THUMBNAIL_QUALITY = 92
@@ -142,6 +148,7 @@ ENV_CONFIG_KEYS = {
     "PROVIDER_MAX_ATTEMPTS",
     "HISTORY_LIMIT",
     "MAX_ACTIVE_JOBS",
+    "TRASH_RETENTION_DAYS",
     "APP_PASSWORD",
     "ADMIN_PASSWORD",
     "APP_SESSION_SECRET",
@@ -520,6 +527,7 @@ def _env_public_value(key: str, values: dict[str, Any]) -> dict[str, Any]:
             "PROVIDER_MAX_ATTEMPTS": str(settings.provider_max_attempts),
             "HISTORY_LIMIT": str(HISTORY_LIMIT),
             "MAX_ACTIVE_JOBS": str(MAX_ACTIVE_JOBS),
+            "TRASH_RETENTION_DAYS": str(settings.trash_retention_days),
             "SYSTEMD_UNIT": settings.systemd_unit,
         }
         value = runtime_defaults.get(key, os.getenv(key, ""))
@@ -798,6 +806,95 @@ def _resolve_gallery_id(value: Any) -> str:
             status_code=400, detail=f"Gallery '{text}' is not configured"
         )
     return text
+
+
+def _trash_path() -> Path:
+    return settings.output_dir / "trash.json"
+
+
+def _trash_retention_seconds() -> int:
+    days = max(1, _safe_int(settings.trash_retention_days, 3))
+    return days * 24 * 60 * 60
+
+
+def _safe_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _trash_record_expires_at(record: dict[str, Any]) -> int:
+    deleted_at = _safe_int(record.get("deleted_at"))
+    if not deleted_at:
+        return 0
+    return deleted_at + _trash_retention_seconds()
+
+
+def _normalize_trash_records(
+    records: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Return (kept, expired). Each record is normalized in place."""
+    now = int(time.time())
+    kept: list[dict[str, Any]] = []
+    expired: list[dict[str, Any]] = []
+    seen_ids: set[str] = set()
+    for raw in records:
+        if not isinstance(raw, dict):
+            continue
+        record = _normalize_history_record(raw)
+        if not record.get("deleted_at"):
+            record["deleted_at"] = now
+        original = str(raw.get("original_gallery_id") or record.get("gallery_id") or DEFAULT_GALLERY_ID)
+        record["original_gallery_id"] = original
+        record_id = str(record.get("id") or "")
+        if not record_id or record_id in seen_ids:
+            continue
+        seen_ids.add(record_id)
+        if _trash_record_expires_at(record) and _trash_record_expires_at(record) <= now:
+            expired.append(record)
+        else:
+            kept.append(record)
+    kept.sort(key=lambda item: _safe_int(item.get("deleted_at")), reverse=True)
+    return kept[:TRASH_LIMIT], expired
+
+
+def _load_trash() -> list[dict[str, Any]]:
+    path = _trash_path()
+    with _json_file_lock(path, exclusive=True):
+        raw_records = _read_json_list_unlocked(path)
+        kept, expired = _normalize_trash_records(raw_records)
+        if expired:
+            history_file_references = _history_file_references(_load_history())
+            kept_file_references = _history_file_references(kept)
+            job_file_references = _job_file_references()
+            preserve = history_file_references | kept_file_references | job_file_references
+            for record in expired:
+                _delete_history_file(
+                    record,
+                    history_file_references=preserve,
+                )
+            _log_event("trash_expired_purged", count=len(expired))
+        if (kept != raw_records) or expired:
+            _write_json_list_unlocked(path, kept)
+        return kept
+
+
+def _save_trash(records: list[dict[str, Any]]) -> None:
+    path = _trash_path()
+    with _json_file_lock(path, exclusive=True):
+        kept, _ = _normalize_trash_records(records)
+        _write_json_list_unlocked(path, kept)
+
+
+def _trash_public(record: dict[str, Any]) -> dict[str, Any]:
+    payload = _history_public(record)
+    payload["deleted_at"] = _safe_int(record.get("deleted_at"))
+    payload["expires_at"] = _trash_record_expires_at(record)
+    payload["original_gallery_id"] = str(
+        record.get("original_gallery_id") or record.get("gallery_id") or DEFAULT_GALLERY_ID
+    )
+    return payload
 
 
 def _load_jobs() -> list[dict[str, Any]]:
@@ -1109,6 +1206,14 @@ def _normalize_history_record(record: dict[str, Any]) -> dict[str, Any]:
     normalized.setdefault("created_at", 0)
     raw_gallery_id = str(normalized.get("gallery_id") or "").strip()
     normalized["gallery_id"] = raw_gallery_id or DEFAULT_GALLERY_ID
+    raw_position = normalized.get("position")
+    if raw_position is None or raw_position == "":
+        normalized["position"] = float(_safe_int(normalized.get("created_at")))
+    else:
+        try:
+            normalized["position"] = float(raw_position)
+        except (TypeError, ValueError):
+            normalized["position"] = float(_safe_int(normalized.get("created_at")))
     metadata = _history_file_metadata(str(normalized.get("file") or ""))
     if normalized.get("file_size_bytes") is None:
         normalized["file_size_bytes"] = metadata["file_size_bytes"]
@@ -1130,7 +1235,13 @@ def _normalize_history_record(record: dict[str, Any]) -> dict[str, Any]:
 
 def _sort_history_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     normalized = [_normalize_history_record(record) for record in records]
-    normalized.sort(key=lambda item: _safe_int(item.get("created_at")), reverse=True)
+    normalized.sort(
+        key=lambda item: (
+            _safe_float(item.get("position"), float(_safe_int(item.get("created_at")))),
+            _safe_int(item.get("created_at")),
+        ),
+        reverse=True,
+    )
     return normalized
 
 
@@ -1186,6 +1297,7 @@ def _history_public(record: dict[str, Any]) -> dict[str, Any]:
         "provider_id": record.get("provider_id", ""),
         "provider_name": record.get("provider_name", ""),
         "gallery_id": record.get("gallery_id", DEFAULT_GALLERY_ID),
+        "position": _safe_float(record.get("position"), float(_safe_int(record.get("created_at")))),
         "operation": record.get("operation", "generate"),
         "source_file": record.get("source_file"),
         "source_history_id": record.get("source_history_id"),
@@ -1220,7 +1332,22 @@ def _append_history(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     path = _history_path()
     with _json_file_lock(path, exclusive=True):
-        history = new_records + _sort_history_records(_read_json_list_unlocked(path))
+        existing_sorted = _sort_history_records(_read_json_list_unlocked(path))
+        gallery_max: dict[str, float] = {}
+        for record in existing_sorted:
+            gid = str(record.get("gallery_id") or DEFAULT_GALLERY_ID)
+            pos = _safe_float(record.get("position"), float(_safe_int(record.get("created_at"))))
+            if gid not in gallery_max or pos > gallery_max[gid]:
+                gallery_max[gid] = pos
+        for new_record in new_records:
+            if "position" in new_record and new_record["position"] is not None:
+                continue
+            gid = str(new_record.get("gallery_id") or DEFAULT_GALLERY_ID)
+            base = gallery_max.get(gid, float(_safe_int(new_record.get("created_at"))))
+            base += 1.0
+            new_record["position"] = base
+            gallery_max[gid] = base
+        history = new_records + existing_sorted
         seen: set[str] = set()
         deduped: list[dict[str, Any]] = []
         for record in history:
@@ -1385,6 +1512,201 @@ def _move_history_items(history_ids: list[str], target_gallery_id: str) -> int:
                 )
         _write_json_list_unlocked(path, kept)
     return moved
+
+
+def _trash_history_items(history_ids: list[str]) -> int:
+    wanted_ids = {str(item) for item in history_ids if str(item).strip()}
+    if not wanted_ids:
+        return 0
+    history_path = _history_path()
+    trash_path = _trash_path()
+    moved = 0
+    now = int(time.time())
+    with _json_file_lock(history_path, exclusive=True):
+        history_records = _read_json_list_unlocked(history_path)
+        kept: list[dict[str, Any]] = []
+        moved_records: list[dict[str, Any]] = []
+        for record in history_records:
+            normalized = _normalize_history_record(record)
+            if str(normalized.get("id")) in wanted_ids:
+                normalized["original_gallery_id"] = str(
+                    normalized.get("gallery_id") or DEFAULT_GALLERY_ID
+                )
+                normalized["deleted_at"] = now
+                moved_records.append(normalized)
+            else:
+                kept.append(normalized)
+        if not moved_records:
+            return 0
+        with _json_file_lock(trash_path, exclusive=True):
+            trash_records = _read_json_list_unlocked(trash_path)
+            trash_records = moved_records + [
+                record
+                for record in trash_records
+                if isinstance(record, dict)
+                and str(record.get("id")) not in {str(r.get("id")) for r in moved_records}
+            ]
+            normalized_trash, expired = _normalize_trash_records(trash_records)
+            if expired:
+                preserve = _history_file_references(kept) | _job_file_references()
+                for record in expired:
+                    _delete_history_file(
+                        record,
+                        history_file_references=preserve,
+                    )
+            _write_json_list_unlocked(trash_path, normalized_trash)
+        _write_json_list_unlocked(history_path, kept)
+        moved = len(moved_records)
+    return moved
+
+
+def _restore_trash_items(trash_ids: list[str]) -> int:
+    wanted_ids = {str(item) for item in trash_ids if str(item).strip()}
+    if not wanted_ids:
+        return 0
+    galleries = _load_galleries()
+    valid_gallery_ids = {gallery["id"] for gallery in galleries}
+
+    history_path = _history_path()
+    trash_path = _trash_path()
+    restored = 0
+    with _json_file_lock(trash_path, exclusive=True):
+        trash_records = _read_json_list_unlocked(trash_path)
+        keep_trash: list[dict[str, Any]] = []
+        restoring: list[dict[str, Any]] = []
+        for record in trash_records:
+            if not isinstance(record, dict):
+                continue
+            if str(record.get("id")) in wanted_ids:
+                restoring.append(record)
+            else:
+                keep_trash.append(record)
+        if not restoring:
+            return 0
+        with _json_file_lock(history_path, exclusive=True):
+            history_records = _read_json_list_unlocked(history_path)
+            existing_ids = {
+                str(_normalize_history_record(record).get("id"))
+                for record in history_records
+            }
+            now = int(time.time())
+            new_records: list[dict[str, Any]] = []
+            for raw in restoring:
+                record = _normalize_history_record(raw)
+                target = str(raw.get("original_gallery_id") or record.get("gallery_id") or DEFAULT_GALLERY_ID)
+                if target not in valid_gallery_ids:
+                    target = DEFAULT_GALLERY_ID
+                record["gallery_id"] = target
+                record.pop("deleted_at", None)
+                record.pop("original_gallery_id", None)
+                record["position"] = None  # _append_history will re-assign max+1
+                if str(record.get("id")) in existing_ids:
+                    record["id"] = uuid.uuid4().hex
+                record["created_at"] = _safe_int(record.get("created_at")) or now
+                new_records.append(record)
+            kept_normalized, _ = _normalize_trash_records(keep_trash)
+            _write_json_list_unlocked(trash_path, kept_normalized)
+        # outside trash lock; _append_history takes its own history lock
+        appended = _append_history(new_records)
+        restored = len(appended)
+    return restored
+
+
+def _permanently_delete_trash_items(trash_ids: list[str]) -> int:
+    wanted_ids = {str(item) for item in trash_ids if str(item).strip()}
+    if not wanted_ids:
+        return 0
+    trash_path = _trash_path()
+    removed_count = 0
+    with _json_file_lock(trash_path, exclusive=True):
+        trash_records = _read_json_list_unlocked(trash_path)
+        kept: list[dict[str, Any]] = []
+        removed: list[dict[str, Any]] = []
+        for record in trash_records:
+            if not isinstance(record, dict):
+                continue
+            normalized = _normalize_history_record(record)
+            normalized["deleted_at"] = _safe_int(record.get("deleted_at"))
+            if str(normalized.get("id")) in wanted_ids:
+                removed.append(normalized)
+            else:
+                kept.append(normalized)
+        if removed:
+            history_records = _load_history()
+            preserve = (
+                _history_file_references(history_records)
+                | _history_file_references(kept)
+                | _job_file_references()
+            )
+            for record in removed:
+                _delete_history_file(
+                    record,
+                    history_file_references=preserve,
+                )
+            kept_normalized, _ = _normalize_trash_records(kept)
+            _write_json_list_unlocked(trash_path, kept_normalized)
+            removed_count = len(removed)
+    return removed_count
+
+
+def _empty_trash() -> int:
+    trash_path = _trash_path()
+    with _json_file_lock(trash_path, exclusive=True):
+        trash_records = _read_json_list_unlocked(trash_path)
+        ids = [
+            str(_normalize_history_record(record).get("id"))
+            for record in trash_records
+            if isinstance(record, dict)
+        ]
+    if not ids:
+        return 0
+    return _permanently_delete_trash_items(ids)
+
+
+def _reorder_history_items(gallery_id: str, ordered_ids: list[str]) -> int:
+    target_id = _resolve_gallery_id(gallery_id)
+    wanted_ids = [str(item) for item in ordered_ids if str(item).strip()]
+    if not wanted_ids:
+        return 0
+    if len(set(wanted_ids)) != len(wanted_ids):
+        raise HTTPException(status_code=400, detail="ordered_ids must be unique")
+
+    path = _history_path()
+    updated = 0
+    with _json_file_lock(path, exclusive=True):
+        records = _read_json_list_unlocked(path)
+        # Compute the highest existing position in the gallery so the reordered
+        # block sits above any unrelated rows that were not part of the request.
+        max_pos = 0.0
+        existing_ids: set[str] = set()
+        for raw in records:
+            normalized = _normalize_history_record(raw)
+            existing_ids.add(str(normalized.get("id")))
+            if str(normalized.get("gallery_id") or DEFAULT_GALLERY_ID) != target_id:
+                continue
+            pos = _safe_float(normalized.get("position"), float(_safe_int(normalized.get("created_at"))))
+            if pos > max_pos:
+                max_pos = pos
+        unknown = [item for item in wanted_ids if item not in existing_ids]
+        if unknown:
+            raise HTTPException(
+                status_code=400,
+                detail=f"unknown history ids: {unknown[:5]}",
+            )
+        base = max_pos + 1.0
+        N = len(wanted_ids)
+        id_to_pos = {hid: base + float(N - 1 - index) for index, hid in enumerate(wanted_ids)}
+        rewritten: list[dict[str, Any]] = []
+        for raw in records:
+            normalized = _normalize_history_record(raw)
+            hid = str(normalized.get("id"))
+            current_gallery = str(normalized.get("gallery_id") or DEFAULT_GALLERY_ID)
+            if hid in id_to_pos and current_gallery == target_id:
+                normalized["position"] = id_to_pos[hid]
+                updated += 1
+            rewritten.append(normalized)
+        _write_json_list_unlocked(path, rewritten)
+    return updated
 
 
 def _history_image_path(record: dict[str, Any]) -> Path | None:
@@ -1810,6 +2132,131 @@ async def move_history_batch(request: Request) -> dict[str, Any]:
         requested=len(history_ids),
     )
     return {"ok": True, "moved": moved, "gallery_id": raw_gallery_id.strip()}
+
+
+@app.post("/v1/history/trash")
+async def trash_history_batch(request: Request) -> dict[str, Any]:
+    _require_auth(request)
+    body = await request.json()
+    raw_ids = body.get("ids", [])
+    if not isinstance(raw_ids, list):
+        raise HTTPException(status_code=400, detail="ids must be a list")
+    history_ids = [str(item) for item in raw_ids if str(item).strip()]
+    if not history_ids:
+        raise HTTPException(status_code=400, detail="ids must not be empty")
+    moved = _trash_history_items(history_ids)
+    _log_event("history_trashed", count=moved, requested=len(history_ids))
+    return {"ok": True, "trashed": moved}
+
+
+@app.post("/v1/history/reorder")
+async def reorder_history_batch(request: Request) -> dict[str, Any]:
+    _require_auth(request)
+    body = await request.json()
+    raw_ids = body.get("ordered_ids", [])
+    raw_gallery_id = body.get("gallery_id", "")
+    if not isinstance(raw_ids, list):
+        raise HTTPException(status_code=400, detail="ordered_ids must be a list")
+    if not isinstance(raw_gallery_id, str) or not raw_gallery_id.strip():
+        raise HTTPException(status_code=400, detail="gallery_id is required")
+    history_ids = [str(item) for item in raw_ids if str(item).strip()]
+    if not history_ids:
+        raise HTTPException(status_code=400, detail="ordered_ids must not be empty")
+    updated = _reorder_history_items(raw_gallery_id.strip(), history_ids)
+    _log_event(
+        "history_reordered",
+        gallery_id=raw_gallery_id.strip(),
+        updated=updated,
+        requested=len(history_ids),
+    )
+    return {"ok": True, "updated": updated, "gallery_id": raw_gallery_id.strip()}
+
+
+@app.get("/v1/trash")
+def list_trash(request: Request) -> dict[str, Any]:
+    _require_auth(request)
+    records = _load_trash()
+    return {
+        "items": [_trash_public(record) for record in records],
+        "retention_days": settings.trash_retention_days,
+        "retention_seconds": _trash_retention_seconds(),
+    }
+
+
+@app.post("/v1/trash/restore")
+async def restore_trash_batch(request: Request) -> dict[str, Any]:
+    _require_auth(request)
+    body = await request.json()
+    raw_ids = body.get("ids", [])
+    if not isinstance(raw_ids, list):
+        raise HTTPException(status_code=400, detail="ids must be a list")
+    trash_ids = [str(item) for item in raw_ids if str(item).strip()]
+    if not trash_ids:
+        raise HTTPException(status_code=400, detail="ids must not be empty")
+    restored = _restore_trash_items(trash_ids)
+    _log_event("trash_restored", count=restored, requested=len(trash_ids))
+    return {"ok": True, "restored": restored}
+
+
+@app.post("/v1/trash/delete")
+async def delete_trash_batch(request: Request) -> dict[str, Any]:
+    _require_auth(request)
+    body = await request.json()
+    raw_ids = body.get("ids", [])
+    if not isinstance(raw_ids, list):
+        raise HTTPException(status_code=400, detail="ids must be a list")
+    trash_ids = [str(item) for item in raw_ids if str(item).strip()]
+    if not trash_ids:
+        raise HTTPException(status_code=400, detail="ids must not be empty")
+    deleted = _permanently_delete_trash_items(trash_ids)
+    _log_event("trash_permanently_deleted", count=deleted, requested=len(trash_ids))
+    return {"ok": True, "deleted": deleted}
+
+
+@app.post("/v1/trash/empty")
+def empty_trash(request: Request) -> dict[str, Any]:
+    _require_auth(request)
+    deleted = _empty_trash()
+    _log_event("trash_emptied", count=deleted)
+    return {"ok": True, "deleted": deleted}
+
+
+@app.get("/v1/trash/settings")
+def get_trash_settings(request: Request) -> dict[str, Any]:
+    _require_auth(request)
+    return {
+        "retention_days": settings.trash_retention_days,
+        "min_days": TRASH_MIN_RETENTION_DAYS,
+        "max_days": TRASH_MAX_RETENTION_DAYS,
+    }
+
+
+@app.post("/v1/trash/settings")
+async def update_trash_settings(request: Request) -> dict[str, Any]:
+    _require_auth(request)
+    body = await request.json()
+    raw_days = body.get("retention_days")
+    if raw_days is None:
+        raise HTTPException(status_code=400, detail="retention_days is required")
+    try:
+        days = int(raw_days)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="retention_days must be an integer")
+    if days < TRASH_MIN_RETENTION_DAYS or days > TRASH_MAX_RETENTION_DAYS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"retention_days must be between {TRASH_MIN_RETENTION_DAYS} "
+                f"and {TRASH_MAX_RETENTION_DAYS}"
+            ),
+        )
+    # Update both the live setting and the .env file so it survives restarts.
+    settings.trash_retention_days = days
+    _write_env_updates({"TRASH_RETENTION_DAYS": str(days)})
+    _log_event("trash_retention_updated", retention_days=days)
+    # trigger immediate cleanup pass with the new retention
+    _load_trash()
+    return {"ok": True, "retention_days": days}
 
 
 @app.post("/v1/history/download")
