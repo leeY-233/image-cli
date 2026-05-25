@@ -2764,11 +2764,38 @@
       .drag-overlay[hidden] { display: none; }
       body.is-dragging .drag-overlay { display: block; }
       .drag-overlay-backdrop { display: none; }
-      /* Only blur the sidebar/composer area during drag */
+      /* Blur the sidebar/composer area during drag via overlay (filter breaks sticky positioning) */
       body.is-dragging .sidebar {
-        filter: blur(12px) saturate(0.8);
         pointer-events: none;
-        transition: filter 0.2s ease;
+        overflow: hidden;
+      }
+      body.is-dragging .sidebar::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 99;
+        background: rgba(9, 9, 11, 0.3);
+        backdrop-filter: blur(12px) saturate(0.8);
+        -webkit-backdrop-filter: blur(12px) saturate(0.8);
+        border-radius: inherit;
+        pointer-events: none;
+      }
+      body.is-dragging .gen-form,
+      body.is-dragging .compact-controls {
+        pointer-events: none;
+        position: relative;
+      }
+      body.is-dragging .gen-form::after,
+      body.is-dragging .compact-controls::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        z-index: 999;
+        background: rgba(9, 9, 11, 0.3);
+        backdrop-filter: blur(12px) saturate(0.8);
+        -webkit-backdrop-filter: blur(12px) saturate(0.8);
+        border-radius: inherit;
+        pointer-events: none;
       }
       /* Keep the gallery panel sharp above everything */
       body.is-dragging .history-panel {
