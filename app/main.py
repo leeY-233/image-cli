@@ -7,6 +7,7 @@ import hmac
 import json
 import logging
 import os
+import re
 import subprocess
 import shutil
 import tempfile
@@ -132,6 +133,34 @@ TRASH_LIMIT = 1000
 SUPPORTED_EDIT_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp"}
 THUMBNAIL_MAX_EDGE = 1024
 THUMBNAIL_QUALITY = 92
+PROVIDER_API_IMAGES = "images"
+PROVIDER_API_CHAT_COMPLETIONS = "chat_completions"
+PROVIDER_API_TYPE_ALIASES = {
+    "": PROVIDER_API_IMAGES,
+    "image": PROVIDER_API_IMAGES,
+    "images": PROVIDER_API_IMAGES,
+    "image_api": PROVIDER_API_IMAGES,
+    "images_api": PROVIDER_API_IMAGES,
+    "chat": PROVIDER_API_CHAT_COMPLETIONS,
+    "chat_completion": PROVIDER_API_CHAT_COMPLETIONS,
+    "chat_completions": PROVIDER_API_CHAT_COMPLETIONS,
+    "chat-completions": PROVIDER_API_CHAT_COMPLETIONS,
+    "chat/completions": PROVIDER_API_CHAT_COMPLETIONS,
+    "v1_chat_completions": PROVIDER_API_CHAT_COMPLETIONS,
+}
+CHAT_COMPLETION_IMAGE_OMITTED_KEYS = {
+    "prompt",
+    "size",
+    "quality",
+    "output_format",
+    "response_format",
+}
+DATA_URL_IMAGE_RE = re.compile(
+    r"data:image/(?P<format>png|jpe?g|webp);base64,(?P<data>[A-Za-z0-9+/_=-]+)",
+    re.IGNORECASE,
+)
+MARKDOWN_IMAGE_RE = re.compile(r"!\[[^\]]*\]\((?P<url>[^)\s]+)(?:\s+\"[^\"]*\")?\)")
+HTTP_URL_RE = re.compile(r"https?://[^\s)\"']+")
 ENV_CONFIG_KEYS = {
     "OPENAI_API_KEY",
     "OPENAI_BASE_URL",
@@ -226,7 +255,9 @@ class ProviderConfig(BaseModel):
     name: str
     base_url: str
     api_key: str
+    model: str = ""
     note: str = ""
+    api_type: Literal["images", "chat_completions"] = PROVIDER_API_IMAGES
 
 
 def _log_event(event: str, **fields: Any) -> None:
@@ -311,6 +342,7 @@ def _default_provider_config() -> ProviderConfig:
         base_url=settings.base_url,
         api_key=settings.api_key,
         note="Default provider from OPENAI_BASE_URL / OPENAI_API_KEY",
+        api_type=PROVIDER_API_IMAGES,
     )
 
 
@@ -320,6 +352,14 @@ def _safe_provider_id(value: Any, fallback: str) -> str:
         return fallback
     safe = "".join(char if char.isalnum() or char in "-_" else "-" for char in text)
     return safe.strip("-_") or fallback
+
+
+def _safe_provider_api_type(value: Any) -> Literal["images", "chat_completions"]:
+    text = str(value or "").strip().lower().replace("-", "_")
+    api_type = PROVIDER_API_TYPE_ALIASES.get(text, PROVIDER_API_IMAGES)
+    if api_type == PROVIDER_API_CHAT_COMPLETIONS:
+        return PROVIDER_API_CHAT_COMPLETIONS
+    return PROVIDER_API_IMAGES
 
 
 def _load_provider_configs(raw: str | None = None) -> list[ProviderConfig]:
@@ -338,7 +378,11 @@ def _load_provider_configs(raw: str | None = None) -> list[ProviderConfig]:
                 name = str(item.get("name") or provider_id).strip()
                 base_url = str(item.get("base_url") or "").strip()
                 api_key = str(item.get("api_key") or "").strip()
+                model = str(item.get("model") or "").strip()
                 note = str(item.get("note") or "").strip()
+                api_type = _safe_provider_api_type(
+                    item.get("api_type") or item.get("type") or item.get("mode")
+                )
                 if not base_url:
                     continue
                 providers.append(
@@ -347,7 +391,9 @@ def _load_provider_configs(raw: str | None = None) -> list[ProviderConfig]:
                         name=name,
                         base_url=base_url,
                         api_key=api_key,
+                        model=model,
                         note=note,
+                        api_type=api_type,
                     )
                 )
     if not providers:
@@ -360,7 +406,9 @@ def _provider_public(provider: ProviderConfig) -> dict[str, Any]:
         "id": provider.id,
         "name": provider.name,
         "base_url": provider.base_url,
+        "model": provider.model,
         "note": provider.note,
+        "api_type": provider.api_type,
         "api_key_configured": bool(provider.api_key),
     }
 
@@ -1864,8 +1912,10 @@ async def update_admin_config(request: Request) -> dict[str, Any]:
             provider_id = _safe_provider_id(item.get("id"), f"provider-{index}")
             name = str(item.get("name") or provider_id).strip()
             base_url = str(item.get("base_url") or "").strip()
+            model = str(item.get("model") or "").strip()
             note = str(item.get("note") or "").strip()
             api_key = str(item.get("api_key") or "").strip()
+            api_type = _safe_provider_api_type(item.get("api_type"))
             if not base_url:
                 continue
             if not api_key and provider_id in existing_by_id:
@@ -1876,13 +1926,17 @@ async def update_admin_config(request: Request) -> dict[str, Any]:
                     "name": name,
                     "base_url": base_url,
                     "api_key": api_key,
+                    "model": model,
                     "note": note,
+                    "api_type": api_type,
                 }
             )
         if provider_updates:
             updates["IMAGE_PROVIDERS"] = json.dumps(provider_updates, ensure_ascii=False)
     if updates:
         _write_env_updates(updates)
+        if "IMAGE_PROVIDERS" in updates:
+            settings.image_providers = updates["IMAGE_PROVIDERS"]
         _log_event("admin_config_updated", keys=sorted(updates))
     return {"ok": True, "updated": sorted(updates), **_admin_config_payload()}
 
@@ -2503,10 +2557,10 @@ def _provider_request_error_detail(
             "hint": "上游请求失败，常见原因是 provider 超时、断流、DNS/TLS/网络异常。",
         },
         "request": {
-            "model": payload["model"],
-            "size": payload["size"],
-            "quality": payload["quality"],
-            "n": payload["n"],
+            "model": payload.get("model"),
+            "size": payload.get("size"),
+            "quality": payload.get("quality"),
+            "n": payload.get("n"),
         },
         "provider_url": provider_url,
         "elapsed_ms": _elapsed_ms(started_at),
@@ -2855,6 +2909,290 @@ async def _request_provider_images(
     return provider_json, images
 
 
+def _chat_completion_payload(provider_payload: dict[str, Any]) -> dict[str, Any]:
+    chat_payload = {
+        key: value
+        for key, value in provider_payload.items()
+        if key not in CHAT_COMPLETION_IMAGE_OMITTED_KEYS and value is not None
+    }
+    messages = chat_payload.get("messages")
+    if not isinstance(messages, list) or not messages:
+        chat_payload["messages"] = [
+            {"role": "user", "content": str(provider_payload.get("prompt") or "")}
+        ]
+    chat_payload["stream"] = False
+    return chat_payload
+
+
+def _image_format_from_mime_label(format_name: str) -> str:
+    normalized = format_name.strip().lower()
+    if normalized in {"jpg", "jpeg"}:
+        return "jpeg"
+    if normalized == "webp":
+        return "webp"
+    return "png"
+
+
+def _clean_image_url(url: Any) -> str:
+    cleaned = str(url or "").strip().strip("<>").strip()
+    while cleaned.endswith((".", ",", ";")):
+        cleaned = cleaned[:-1]
+    return cleaned
+
+
+def _looks_like_raw_image_url(url: str) -> bool:
+    lower_url = url.lower()
+    path = lower_url.split("?", 1)[0].split("#", 1)[0]
+    return path.endswith((".png", ".jpg", ".jpeg", ".webp")) or "image" in lower_url or "img" in lower_url
+
+
+def _looks_like_base64_payload(value: str) -> bool:
+    text = value.strip()
+    return len(text) > 80 and re.fullmatch(r"[A-Za-z0-9+/_=-]+", text) is not None
+
+
+def _append_chat_image_item(
+    items: list[dict[str, Any]],
+    seen: set[tuple[str, str]],
+    item: dict[str, Any],
+) -> None:
+    url = _clean_image_url(item.get("url"))
+    b64_json = item.get("b64_json")
+    if isinstance(b64_json, str) and b64_json.strip():
+        key = ("b64", b64_json[:120])
+        if key in seen:
+            return
+        seen.add(key)
+        cleaned = {
+            "b64_json": b64_json.strip(),
+            "revised_prompt": item.get("revised_prompt"),
+        }
+        if item.get("output_format"):
+            cleaned["output_format"] = item.get("output_format")
+        items.append(cleaned)
+        return
+    if url:
+        key = ("url", url)
+        if key in seen:
+            return
+        seen.add(key)
+        items.append({"url": url, "revised_prompt": item.get("revised_prompt")})
+
+
+def _append_chat_image_items_from_text(
+    items: list[dict[str, Any]],
+    seen: set[tuple[str, str]],
+    text: str,
+) -> None:
+    if not text:
+        return
+    for match in DATA_URL_IMAGE_RE.finditer(text):
+        _append_chat_image_item(
+            items,
+            seen,
+            {
+                "b64_json": match.group("data"),
+                "output_format": _image_format_from_mime_label(match.group("format")),
+            },
+        )
+
+    text_without_data_urls = DATA_URL_IMAGE_RE.sub("", text)
+    for match in MARKDOWN_IMAGE_RE.finditer(text_without_data_urls):
+        url = _clean_image_url(match.group("url"))
+        if url:
+            _append_chat_image_item(items, seen, {"url": url})
+
+    for match in HTTP_URL_RE.finditer(text_without_data_urls):
+        url = _clean_image_url(match.group(0))
+        if url and _looks_like_raw_image_url(url):
+            _append_chat_image_item(items, seen, {"url": url})
+
+
+def _append_chat_image_value(
+    items: list[dict[str, Any]],
+    seen: set[tuple[str, str]],
+    value: Any,
+) -> None:
+    if value is None:
+        return
+    if isinstance(value, str):
+        text = value.strip()
+        if text.startswith(("http://", "https://")):
+            _append_chat_image_item(items, seen, {"url": text})
+        else:
+            _append_chat_image_items_from_text(items, seen, text)
+        return
+    if isinstance(value, list):
+        for item in value:
+            _append_chat_image_value(items, seen, item)
+        return
+    if not isinstance(value, dict):
+        return
+
+    if value.get("b64_json") or value.get("base64"):
+        _append_chat_image_item(
+            items,
+            seen,
+            {
+                "b64_json": value.get("b64_json") or value.get("base64"),
+                "output_format": value.get("output_format") or value.get("format"),
+                "revised_prompt": value.get("revised_prompt"),
+            },
+        )
+    for key in ("image_url", "url", "file_url"):
+        if key in value:
+            _append_chat_image_value(items, seen, value.get(key))
+    if "image" in value:
+        image_value = value.get("image")
+        if isinstance(image_value, str) and _looks_like_base64_payload(image_value):
+            _append_chat_image_item(
+                items,
+                seen,
+                {
+                    "b64_json": image_value,
+                    "output_format": value.get("output_format") or value.get("format"),
+                    "revised_prompt": value.get("revised_prompt"),
+                },
+            )
+        else:
+            _append_chat_image_value(items, seen, image_value)
+    for key in ("content", "text", "data"):
+        if key in value:
+            _append_chat_image_value(items, seen, value.get(key))
+
+
+def _chat_completion_response_to_image_response(
+    provider_json: dict[str, Any],
+    provider_payload: dict[str, Any],
+) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+
+    for key in ("data", "images", "image"):
+        value = provider_json.get(key)
+        if value is not None:
+            _append_chat_image_value(items, seen, value)
+
+    choices = provider_json.get("choices")
+    if isinstance(choices, list):
+        for choice in choices:
+            if not isinstance(choice, dict):
+                continue
+            message = choice.get("message") or choice.get("delta")
+            if isinstance(message, dict):
+                for key in ("images", "image", "image_url", "content"):
+                    if key in message:
+                        _append_chat_image_value(items, seen, message.get(key))
+            for key in ("images", "image", "image_url", "content", "text"):
+                if key in choice:
+                    _append_chat_image_value(items, seen, choice.get(key))
+
+    normalized = provider_json.copy()
+    normalized["data"] = items
+    normalized["chat_completion_response"] = True
+    normalized.setdefault("output_format", provider_payload.get("output_format") or "png")
+    return normalized
+
+
+async def _request_provider_chat_completion_images(
+    client: httpx.AsyncClient,
+    provider_url: str,
+    headers: dict[str, str],
+    provider_payload: dict[str, Any],
+    request_id: str,
+    started_at: float,
+    provider_request_index: int,
+) -> tuple[dict[str, Any], list[GeneratedImage]]:
+    chat_payload = _chat_completion_payload(provider_payload)
+    try:
+        response = await _post_with_retry(
+            client, provider_url, headers, chat_payload, request_id
+        )
+        response.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        detail = _provider_error_detail(exc.response)
+        _log_event(
+            "generate_chat_completion_provider_http_error",
+            request_id=request_id,
+            provider_request_index=provider_request_index,
+            status_code=exc.response.status_code,
+            detail=detail,
+            elapsed_ms=_elapsed_ms(started_at),
+        )
+        raise HTTPException(status_code=exc.response.status_code, detail=detail) from exc
+    except httpx.HTTPError as exc:
+        detail = _provider_request_error_detail(
+            exc, provider_payload, provider_url, started_at
+        )
+        _log_event(
+            "generate_chat_completion_provider_request_error",
+            request_id=request_id,
+            provider_request_index=provider_request_index,
+            detail=detail,
+        )
+        raise HTTPException(status_code=502, detail=detail) from exc
+
+    try:
+        raw_provider_json = response.json()
+    except ValueError as exc:
+        detail = _provider_non_json_detail(response, started_at)
+        _log_event(
+            "generate_chat_completion_provider_non_json",
+            request_id=request_id,
+            provider_request_index=provider_request_index,
+            detail=detail,
+        )
+        raise HTTPException(status_code=502, detail=detail) from exc
+
+    _log_event(
+        "generate_chat_completion_provider_response",
+        request_id=request_id,
+        provider_request_index=provider_request_index,
+        status_code=response.status_code,
+        provider_response=_redact_large_payloads(raw_provider_json),
+        elapsed_ms=_elapsed_ms(started_at),
+    )
+
+    provider_json = _chat_completion_response_to_image_response(
+        raw_provider_json,
+        provider_payload,
+    )
+    try:
+        images = await _normalize_images(
+            provider_json,
+            str(provider_payload.get("output_format") or "png"),
+        )
+    except HTTPException as exc:
+        _log_event(
+            "generate_chat_completion_normalize_error",
+            request_id=request_id,
+            provider_request_index=provider_request_index,
+            detail=exc.detail,
+            provider_response=_redact_large_payloads(provider_json),
+            elapsed_ms=_elapsed_ms(started_at),
+        )
+        raise
+    except Exception as exc:
+        detail = {
+            "error": {
+                "type": exc.__class__.__name__,
+                "message": str(exc) or repr(exc),
+                "hint": "Provider returned chat completion JSON, but local image extraction or saving failed.",
+            },
+            "elapsed_ms": _elapsed_ms(started_at),
+        }
+        _log_event(
+            "generate_chat_completion_normalize_unexpected_error",
+            request_id=request_id,
+            provider_request_index=provider_request_index,
+            detail=detail,
+            provider_response=_redact_large_payloads(provider_json),
+        )
+        raise HTTPException(status_code=502, detail=detail) from exc
+
+    return provider_json, images
+
+
 def _multipart_file_summary(
     files: list[tuple[str, tuple[str, bytes, str]]]
 ) -> list[dict[str, Any]]:
@@ -3018,13 +3356,26 @@ async def _execute_generation(
         "Content-Type": "application/json",
     }
     provider_payload = _provider_payload(payload)
-    provider_url = _provider_url(provider, "images/generations")
+    if provider.model:
+        provider_payload["model"] = provider.model
+        payload = {**payload, "model": provider.model}
+    uses_chat_completions = provider.api_type == PROVIDER_API_CHAT_COMPLETIONS
+    provider_url = _provider_url(
+        provider,
+        "chat/completions" if uses_chat_completions else "images/generations",
+    )
+    request_provider_images = (
+        _request_provider_chat_completion_images
+        if uses_chat_completions
+        else _request_provider_images
+    )
 
     _log_event(
         "generate_start",
         request_id=request_id,
         provider_id=provider.id,
         provider_name=provider.name,
+        provider_api_type=provider.api_type,
         provider_url=provider_url,
         payload=payload,
         client=client_host,
@@ -3035,7 +3386,7 @@ async def _execute_generation(
     images: list[GeneratedImage] = []
 
     async with httpx.AsyncClient(timeout=settings.timeout_seconds) as client:
-        provider_json, provider_images = await _request_provider_images(
+        provider_json, provider_images = await request_provider_images(
             client,
             provider_url,
             headers,
@@ -3063,7 +3414,7 @@ async def _execute_generation(
                 break
             single_payload = provider_payload.copy()
             single_payload["n"] = 1
-            provider_json, provider_images = await _request_provider_images(
+            provider_json, provider_images = await request_provider_images(
                 client,
                 provider_url,
                 headers,
@@ -3131,6 +3482,14 @@ async def _execute_edit(
     source_file: str | None = None,
 ) -> GenerateImageResponse:
     provider = _get_provider(str(payload.get("provider_id") or ""))
+    if provider.api_type == PROVIDER_API_CHAT_COMPLETIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Provider '{provider.name}' uses /v1/chat/completions for generation "
+                "and does not support image edit."
+            ),
+        )
     if not provider.api_key:
         _log_event(
             "edit_config_error",
@@ -3142,6 +3501,9 @@ async def _execute_edit(
 
     headers = {"Authorization": f"Bearer {provider.api_key}"}
     provider_payload = _provider_payload(payload)
+    if provider.model:
+        provider_payload["model"] = provider.model
+        payload = {**payload, "model": provider.model}
     provider_url = _provider_url(provider, "images/edits")
     form_payload = {key: str(value) for key, value in provider_payload.items() if value is not None}
     files: list[tuple[str, tuple[str, bytes, str]]] = []
@@ -3621,8 +3983,9 @@ async def _normalize_images(
                 continue
 
             file_url = None
+            item_output_format = str(item.get("output_format") or output_format)
             if item.get("b64_json"):
-                file_url = _save_b64_image(str(item["b64_json"]), index, output_format)
+                file_url = _save_b64_image(str(item["b64_json"]), index, item_output_format)
             elif item.get("url"):
                 file_url = await _download_image(client, str(item["url"]), index)
 
@@ -3710,11 +4073,19 @@ def _redact_large_payloads(value: Any) -> Any:
     if isinstance(value, dict):
         redacted = {}
         for key, item in value.items():
-            if key == "b64_json" and isinstance(item, str):
+            if key in {"b64_json", "base64"} and isinstance(item, str):
                 redacted[key] = f"<redacted base64 image, {len(item)} chars>"
             else:
                 redacted[key] = _redact_large_payloads(item)
         return redacted
     if isinstance(value, list):
         return [_redact_large_payloads(item) for item in value]
+    if isinstance(value, str):
+        return DATA_URL_IMAGE_RE.sub(
+            lambda match: (
+                f"data:image/{match.group('format')};base64,"
+                f"<redacted image, {len(match.group('data'))} chars>"
+            ),
+            value,
+        )
     return value

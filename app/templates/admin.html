@@ -427,9 +427,20 @@
               <label>Name</label>
               <input name="name" value="${escapeHtml(provider.name || "")}" placeholder="Display name" />
             </div>
+            <div class="field">
+              <label>API Type</label>
+              <select name="api_type">
+                <option value="images" ${(provider.api_type || "images") === "images" ? "selected" : ""}>Images API</option>
+                <option value="chat_completions" ${provider.api_type === "chat_completions" ? "selected" : ""}>Chat Completions</option>
+              </select>
+            </div>
             <div class="field wide">
               <label>Base URL</label>
               <input name="base_url" value="${escapeHtml(provider.base_url || "")}" placeholder="https://example.com/v1" />
+            </div>
+            <div class="field wide">
+              <label>Model Override</label>
+              <input name="model" value="${escapeHtml(provider.model || "")}" placeholder="Optional. Leave blank to use IMAGE_MODEL." />
             </div>
             <div class="field wide">
               <label>API Key</label>
@@ -463,7 +474,9 @@
         return [...providerList.querySelectorAll(".provider-card")].map(card => ({
           id: card.querySelector('[name="id"]').value,
           name: card.querySelector('[name="name"]').value,
+          api_type: card.querySelector('[name="api_type"]').value,
           base_url: card.querySelector('[name="base_url"]').value,
+          model: card.querySelector('[name="model"]').value,
           api_key: card.querySelector('[name="api_key"]').value,
           note: card.querySelector('[name="note"]').value,
         }));
@@ -480,7 +493,7 @@
         setStatus("Loaded", "ok");
       }
       addProvider.addEventListener("click", () => {
-        providers.push({ id: `provider-${providers.length + 1}`, name: `Provider ${providers.length + 1}`, base_url: "", note: "", api_key_configured: false });
+        providers.push({ id: `provider-${providers.length + 1}`, name: `Provider ${providers.length + 1}`, api_type: "images", base_url: "", note: "", api_key_configured: false });
         renderProviders();
       });
       function collectConfig() {
