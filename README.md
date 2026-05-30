@@ -37,7 +37,7 @@ cp .env.example .env
 ```env
 OPENAI_API_KEY=你的第三方供应商 API Key
 OPENAI_BASE_URL=https://你的供应商域名/v1
-IMAGE_PROVIDERS=[{"id":"default","name":"默认供应商","api_type":"images","base_url":"https://你的供应商域名/v1","api_key":"你的第三方供应商 API Key","note":"显示在主页 provider 悬浮提示中的备注"},{"id":"chat-image","name":"Chat Completions 图片供应商","api_type":"chat_completions","base_url":"https://你的聊天供应商域名/v1","api_key":"你的聊天供应商 API Key","model":"你的聊天图片模型","note":"仅生成；使用 /v1/chat/completions。"}]
+IMAGE_PROVIDERS=[{"id":"default","name":"默认供应商","api_type":"images","base_url":"https://你的供应商域名/v1","api_key":"你的第三方供应商 API Key","note":"显示在主页 provider 悬浮提示中的备注"},{"id":"chat-image","name":"Chat Completions 图片供应商","api_type":"chat_completions","base_url":"https://你的聊天供应商域名/v1","api_key":"你的聊天供应商 API Key","model":"你的聊天图片模型","note":"生成和编辑都使用 /v1/chat/completions。"}]
 IMAGE_MODEL=gpt-image-2
 
 IMAGE_SIZE=1024x1024
@@ -515,7 +515,7 @@ curl -X POST http://127.0.0.1:8000/v1/admin/config \
         "base_url": "https://api.chat-image.example/v1",
         "api_key": "",
         "model": "chat-image-model",
-        "note": "仅生成；生成时转发到 /v1/chat/completions"
+        "note": "生成和编辑都转发到 /v1/chat/completions"
       }
     ]
   }'
@@ -545,10 +545,10 @@ curl -N -b cookies.txt http://127.0.0.1:8000/v1/debug/logs/cliproxyapi
 ## 供应商兼容说明
 
 - `api_type` 为空或 `images` 时，生成请求路径是 `{base_url}/images/generations`。
-- `api_type` 为 `chat_completions` 时，只有 Generate 会转发到 `{base_url}/chat/completions`；请求会使用 `messages: [{"role":"user","content": prompt}]`，并从返回的 `choices[].message.content`、`message.images`、`data` 或 `images` 中提取图片 URL / data URL / base64 图片。
+- `api_type` 为 `chat_completions` 时，Generate 和 Edit 都会转发到 `{base_url}/chat/completions`；Generate 使用 `messages: [{"role":"user","content": prompt}]`，Edit 会把上传的源图和可选 mask 作为 data URL 图片内容放进同一条 user message，并从返回的 `choices[].message.content`、`message.images`、`data` 或 `images` 中提取图片 URL / data URL / base64 图片。
 - provider 配置里的 `model` 为空时使用请求里的 `model` 或全局 `IMAGE_MODEL`；非空时只对该 provider 覆盖上游请求的 `model`。
 - 编辑请求路径是 `{base_url}/images/edits`，使用 `multipart/form-data` 转发源图、可选 `mask` 和 prompt。
-- `chat_completions` provider 不支持 Edit；选中该 provider 编辑时会返回 400，避免误发到 `/images/edits`。
+- 只有 `api_type` 为空或 `images` 的 provider 会使用 `{base_url}/images/edits`。
 - 源图字段名默认是 `image[]`，可通过 `IMAGE_EDIT_IMAGE_FIELD=image` 适配部分兼容供应商。
 - 使用 Bearer Token：`Authorization: Bearer {OPENAI_API_KEY}`。
 - 默认要求 provider 返回 `b64_json`，服务会保存到 `outputs/` 并通过 `/files/...` 访问。

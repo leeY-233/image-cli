@@ -2928,6 +2928,47 @@ def _chat_completion_payload(provider_payload: dict[str, Any]) -> dict[str, Any]
     return chat_payload
 
 
+def _chat_completion_image_part(
+    image_data: dict[str, str | bytes],
+) -> dict[str, Any] | None:
+    content = image_data.get("content")
+    if not isinstance(content, bytes):
+        return None
+    content_type = str(image_data.get("content_type") or "image/png")
+    b64_image = base64.b64encode(content).decode("ascii")
+    return {
+        "type": "image_url",
+        "image_url": {"url": f"data:{content_type};base64,{b64_image}"},
+    }
+
+
+def _chat_completion_edit_messages(
+    prompt: str,
+    source_images: list[dict[str, str | bytes]],
+    mask_image: dict[str, str | bytes] | None,
+) -> list[dict[str, Any]]:
+    instruction = (
+        f"{prompt.strip()}\n\n"
+        "Edit the attached source image(s) according to the instruction. "
+        "Use the image attachments as the visual source/reference."
+    )
+    if mask_image is not None:
+        instruction += " A mask image is attached after the source image(s); use it as the edit mask if supported."
+
+    content: list[dict[str, Any]] = [{"type": "text", "text": instruction}]
+    for source_image in source_images:
+        image_part = _chat_completion_image_part(source_image)
+        if image_part is not None:
+            content.append(image_part)
+    if mask_image is not None:
+        content.append({"type": "text", "text": "Mask image:"})
+        mask_part = _chat_completion_image_part(mask_image)
+        if mask_part is not None:
+            content.append(mask_part)
+
+    return [{"role": "user", "content": content}]
+
+
 def _image_format_from_mime_label(format_name: str) -> str:
     normalized = format_name.strip().lower()
     if normalized in {"jpg", "jpeg"}:
@@ -3486,14 +3527,6 @@ async def _execute_edit(
     source_file: str | None = None,
 ) -> GenerateImageResponse:
     provider = _get_provider(str(payload.get("provider_id") or ""))
-    if provider.api_type == PROVIDER_API_CHAT_COMPLETIONS:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Provider '{provider.name}' uses /v1/chat/completions for generation "
-                "and does not support image edit."
-            ),
-        )
     if not provider.api_key:
         _log_event(
             "edit_config_error",
@@ -3508,7 +3541,11 @@ async def _execute_edit(
     if provider.model:
         provider_payload["model"] = provider.model
         payload = {**payload, "model": provider.model}
-    provider_url = _provider_url(provider, "images/edits")
+    uses_chat_completions = provider.api_type == PROVIDER_API_CHAT_COMPLETIONS
+    provider_url = _provider_url(
+        provider,
+        "chat/completions" if uses_chat_completions else "images/edits",
+    )
     form_payload = {key: str(value) for key, value in provider_payload.items() if value is not None}
     files: list[tuple[str, tuple[str, bytes, str]]] = []
     for source_image in source_images:
@@ -3544,6 +3581,7 @@ async def _execute_edit(
         request_id=request_id,
         provider_id=provider.id,
         provider_name=provider.name,
+        provider_api_type=provider.api_type,
         provider_url=provider_url,
         payload=payload,
         files=_multipart_file_summary(files),
@@ -3551,15 +3589,32 @@ async def _execute_edit(
     )
 
     async with httpx.AsyncClient(timeout=settings.timeout_seconds) as client:
-        provider_json, images = await _request_provider_edit_images(
-            client,
-            provider_url,
-            headers,
-            form_payload,
-            files,
-            request_id,
-            started_at,
-        )
+        if uses_chat_completions:
+            chat_payload = provider_payload.copy()
+            chat_payload["messages"] = _chat_completion_edit_messages(
+                str(payload["prompt"]),
+                source_images,
+                mask_image,
+            )
+            provider_json, images = await _request_provider_chat_completion_images(
+                client,
+                provider_url,
+                {**headers, "Content-Type": "application/json"},
+                chat_payload,
+                request_id,
+                started_at,
+                provider_request_index=1,
+            )
+        else:
+            provider_json, images = await _request_provider_edit_images(
+                client,
+                provider_url,
+                headers,
+                form_payload,
+                files,
+                request_id,
+                started_at,
+            )
     provider_json["provider_id"] = provider.id
     provider_json["provider_name"] = provider.name
 
