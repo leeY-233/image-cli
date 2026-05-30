@@ -1267,6 +1267,25 @@
         .history-list { padding: 0 14px 8px; }
         .history-header { padding: 8px 14px 4px; }
       }
+      @media (max-width: 760px) {
+        .history-header {
+          flex-wrap: nowrap;
+          gap: 6px;
+        }
+        .gallery-switcher {
+          flex: 1 1 0;
+          min-width: 0;
+          overflow-x: auto;
+        }
+        .history-actions {
+          flex: 0 0 auto;
+          flex-wrap: nowrap;
+          overflow-x: auto;
+          max-width: 50%;
+          scrollbar-width: none;
+        }
+        .history-actions::-webkit-scrollbar { display: none; }
+      }
 
       /* ─── Mockup v2 Gallery Shell ─── */
       :root {
@@ -1470,6 +1489,12 @@
         background: var(--bg-solid-card);
         color: var(--text-dim);
         box-shadow: none;
+      }
+      .mini-btn:hover {
+        background: var(--bg-elevated);
+        border-color: var(--border-hover);
+        color: var(--text);
+        transform: translateY(-1px);
       }
       .mode-btn,
       .seg-btn,
@@ -2742,9 +2767,9 @@
         -o-user-drag: none;
       }
       .history-row img { -webkit-user-drag: none; user-drag: none; }
-      body.is-dragging { cursor: grabbing; overflow: hidden; touch-action: none; }
+      body.is-dragging { cursor: grabbing; touch-action: none; }
       body.is-dragging .history-row { touch-action: none; }
-      body.is-dragging .history-panel { overscroll-behavior: none; overflow: hidden; }
+      body.is-dragging .history-panel { overscroll-behavior: none; }
       .history-row-dragging {
         opacity: 0.2;
         background: rgba(0, 0, 0, 0.4) !important;
@@ -2799,7 +2824,6 @@
       }
       /* Keep the gallery panel sharp above everything */
       body.is-dragging .history-panel {
-        position: relative;
         z-index: 960;
       }
       .drag-targets-frame {
@@ -3255,6 +3279,8 @@
               <button class="mini-btn" id="openTrashBtn" type="button" title="打开回收站">
                 <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;vertical-align:-2px;"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/></svg>回收站
               </button>
+              <button class="mini-btn" id="retryAllFailedBtn" type="button" title="重试所有失败的任务" hidden>重试失败</button>
+              <button class="mini-btn" id="deleteAllFailedBtn" type="button" title="删除所有失败的记录" hidden style="border-color:var(--danger-border);color:var(--danger);">删除失败</button>
               <button class="mini-btn" id="selectAllHistory" type="button" hidden>Select All</button>
               <button class="mini-btn" id="selectHistory" type="button">Select</button>
               <button class="mini-btn" id="moveSelected" type="button" hidden>Move</button>
@@ -3809,6 +3835,7 @@
         } else {
           if (!galleries.find(gallery => gallery.id === selectedGalleryId)) {
             selectedGalleryId = galleries[0].id;
+            localStorage.setItem(galleryStorageKey, selectedGalleryId);
           }
           galleryTabs.replaceChildren(...galleries.map(gallery => {
             const button = document.createElement("button");
@@ -4771,6 +4798,11 @@
         visibleHistoryRecords = [...records];
         const visibleJobs = [...pendingHistoryJobs.values()].filter(jobBelongsToCurrentGallery);
         historyCount.textContent = `${visibleHistoryRecords.length + visibleJobs.length}`;
+        const failedCount = visibleHistoryRecords.filter(r => r.status === "failed").length;
+        const _retryBtn = document.getElementById("retryAllFailedBtn");
+        const _deleteBtn = document.getElementById("deleteAllFailedBtn");
+        if (_retryBtn) _retryBtn.hidden = !failedCount;
+        if (_deleteBtn) _deleteBtn.hidden = !failedCount;
         renderedHistoryCount = 0;
         renderedHistoryPrefixCount = visibleJobs.length;
         historyScrollQueued = false;
@@ -5510,7 +5542,7 @@
       // On iOS Safari, only a non-passive touchmove preventDefault() actually stops scrolling.
       // We register this once and only block when our drag is active.
       history.addEventListener("touchmove", event => {
-        if (dragState && (dragState.active || dragState.holdTimer)) {
+        if (dragState && dragState.active) {
           if (event.cancelable) event.preventDefault();
         }
       }, { passive: false });
@@ -5524,14 +5556,12 @@
         const recordId = row.dataset.historyId;
         const record = visibleHistoryRecords.find(r => r.id === recordId);
         if (!record) return;
-        // Block native drag + text selection immediately.
-        if (event.cancelable) event.preventDefault();
         const startX = event.clientX;
         const startY = event.clientY;
         const isTouch = event.pointerType !== "mouse";
         const pointerId = event.pointerId;
-        // Lock touch-action on the row so the browser doesn't claim the gesture for scroll/refresh.
-        if (isTouch) row.style.touchAction = "none";
+        // For mouse: block native drag immediately. For touch: let scroll work until hold confirms drag.
+        if (!isTouch && event.cancelable) event.preventDefault();
         dragState = {
           active: false,
           record,
@@ -5548,6 +5578,8 @@
         if (isTouch) {
           dragState.holdTimer = setTimeout(() => {
             if (!dragState || dragState.active) return;
+            // Now we know it's a long-press — lock scrolling and start drag.
+            row.style.touchAction = "none";
             startActualDrag(record, row, dragState.lastX || startX, dragState.lastY || startY);
             try { row.setPointerCapture(pointerId); } catch (_) {}
           }, DRAG_HOLD_MS);
@@ -5571,7 +5603,11 @@
             if (moved > DRAG_HOLD_TOLERANCE) {
               if (dragState.holdTimer) { clearTimeout(dragState.holdTimer); dragState.holdTimer = null; }
               restoreTouchAction();
-              cleanupDrag();
+              dragState = null;
+              document.removeEventListener("pointermove", onMove, true);
+              document.removeEventListener("pointerup", onUp, true);
+              document.removeEventListener("pointercancel", onCancel, true);
+              return;
             }
           } else if (moved > DRAG_MOUSE_THRESHOLD) {
             startActualDrag(record, row, ev.clientX, ev.clientY);
@@ -5820,6 +5856,77 @@
       function closeTrashModal() { trashModal.hidden = true; }
 
       if (openTrashBtn) openTrashBtn.addEventListener("click", openTrashModal);
+
+      const retryAllFailedBtn = document.querySelector("#retryAllFailedBtn");
+      const deleteAllFailedBtn = document.querySelector("#deleteAllFailedBtn");
+
+      async function retryAllFailed() {
+        const failed = visibleHistoryRecords.filter(r => r.status === "failed" && r.prompt);
+        if (!failed.length) return;
+        const ok = await uiConfirm(
+          `将重新提交 ${failed.length} 个失败的任务（使用原始参数）。继续？`,
+          { title: "重试所有失败任务", confirmText: "全部重试" }
+        );
+        if (!ok) return;
+        let submitted = 0;
+        for (const record of failed) {
+          try {
+            const payload = {
+              prompt: record.prompt,
+              provider_id: record.provider_id || selectedProviderId || "",
+              gallery_id: selectedGalleryId,
+              size: record.size || undefined,
+              quality: record.requested_quality || record.quality || undefined,
+              output_format: record.output_format || undefined,
+              n: 1,
+            };
+            const res = await fetch("/v1/jobs", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            });
+            if (res.ok) {
+              const job = await res.json();
+              rememberBgJob(job);
+              pollBgJob(job.id);
+              submitted++;
+            }
+          } catch (_) {}
+        }
+        if (submitted) {
+          renderJobsPopover();
+          refreshIdleStatus();
+        }
+      }
+
+      async function deleteAllFailed() {
+        const failed = visibleHistoryRecords.filter(r => r.status === "failed");
+        if (!failed.length) return;
+        const ok = await uiConfirm(
+          `确定删除当前画廊中 ${failed.length} 条失败记录？`,
+          { title: "删除所有失败记录", confirmText: "删除", danger: true }
+        );
+        if (!ok) return;
+        const ids = failed.map(r => r.id);
+        try {
+          const res = await fetch("/v1/history/delete", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ids }),
+          });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || `HTTP ${res.status}`);
+          }
+        } catch (e) {
+          uiAlert(`删除失败：${e.message}`, { title: "操作失败" });
+          return;
+        }
+        await loadHistory();
+      }
+
+      if (retryAllFailedBtn) retryAllFailedBtn.addEventListener("click", retryAllFailed);
+      if (deleteAllFailedBtn) deleteAllFailedBtn.addEventListener("click", deleteAllFailed);
       if (trashCloseBtn) trashCloseBtn.addEventListener("click", closeTrashModal);
       if (trashRefreshBtn) trashRefreshBtn.addEventListener("click", loadTrash);
       if (trashEmptyBtn) trashEmptyBtn.addEventListener("click", emptyTrash);

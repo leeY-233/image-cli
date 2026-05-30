@@ -34,7 +34,7 @@ from PIL import Image, ImageOps, UnidentifiedImageError
 from pydantic import BaseModel, Field
 
 
-load_dotenv()
+load_dotenv(override=True)
 
 
 def _env_int(name: str, default: int, minimum: int = 1) -> int:
@@ -554,7 +554,11 @@ def _env_encode(value: str) -> str:
     safe_chars = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_./:-[]")
     if all(char in safe_chars for char in value):
         return value
-    return json.dumps(value, ensure_ascii=False)
+    # Use single quotes so dotenv treats the content literally (no escape processing).
+    # If the value itself contains single quotes, fall back to double-quote with escaping.
+    if "'" not in value:
+        return f"'{value}'"
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"') + '"'
 
 
 def _env_public_value(key: str, values: dict[str, Any]) -> dict[str, Any]:
