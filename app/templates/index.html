@@ -837,7 +837,21 @@
         overflow: hidden;
         text-overflow: ellipsis;
         line-height: 1;
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
         transition: border-color 0.14s ease, background-color 0.14s ease, color 0.14s ease, box-shadow 0.14s ease, transform 0.14s ease;
+      }
+      .gallery-tab-label {
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .gallery-tab-lock {
+        width: 12px;
+        height: 12px;
+        flex: 0 0 auto;
+        opacity: 0.78;
       }
       .gallery-tab:hover {
         border-color: var(--border-hover);
@@ -2653,6 +2667,129 @@
         background-color: var(--bg-solid-card, #18181b);
         color: var(--text);
       }
+      .ui-dialog-custom[hidden] { display: none; }
+      .gallery-form {
+        display: grid;
+        gap: 14px;
+      }
+      .gallery-form-field {
+        display: grid;
+        gap: 7px;
+      }
+      .gallery-form-label {
+        font-size: 11px;
+        font-weight: 750;
+        color: var(--text-dim);
+      }
+      .gallery-form-input {
+        width: 100%;
+        min-height: 38px;
+        padding: 8px 12px;
+        background: var(--bg-input);
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        color: var(--text);
+        font-size: 13px;
+        font-family: inherit;
+        outline: none;
+        transition: border-color 0.12s, box-shadow 0.12s;
+      }
+      .gallery-form-input:focus {
+        border-color: var(--border-focus, var(--accent, var(--border-hover)));
+        box-shadow: 0 0 0 3px var(--accent-glow, rgba(139, 92, 246, 0.18));
+      }
+      .gallery-switches {
+        display: grid;
+        gap: 10px;
+      }
+      .gallery-switch-row {
+        min-height: 34px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+      }
+      .gallery-switch-copy {
+        display: grid;
+        gap: 3px;
+        min-width: 0;
+      }
+      .gallery-switch-title {
+        font-size: 13px;
+        font-weight: 750;
+        color: var(--text);
+      }
+      .gallery-switch-hint {
+        font-size: 11px;
+        color: var(--text-muted);
+        line-height: 1.35;
+      }
+      .ios-switch {
+        position: relative;
+        width: 42px;
+        height: 24px;
+        flex: 0 0 auto;
+      }
+      .ios-switch input {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        cursor: pointer;
+        z-index: 2;
+      }
+      .ios-switch-track {
+        position: absolute;
+        inset: 0;
+        border-radius: 999px;
+        background: rgba(120, 120, 128, 0.32);
+        border: 1px solid rgba(120, 120, 128, 0.22);
+        box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.22);
+        transition: background-color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+      }
+      .ios-switch-track::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 18px;
+        height: 18px;
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.32), 0 1px 1px rgba(0, 0, 0, 0.15);
+        transition: transform 0.22s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      .ios-switch input:checked + .ios-switch-track {
+        background: #34c759;
+        border-color: #34c759;
+      }
+      .ios-switch input:checked + .ios-switch-track::after {
+        transform: translateX(18px);
+      }
+      .ios-switch input:focus-visible + .ios-switch-track {
+        box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.24), inset 0 1px 2px rgba(0, 0, 0, 0.18);
+      }
+      .ios-switch input:disabled {
+        cursor: not-allowed;
+      }
+      .ios-switch input:disabled + .ios-switch-track {
+        opacity: 0.46;
+      }
+      .gallery-password-fields {
+        display: grid;
+        gap: 8px;
+        max-height: 0;
+        opacity: 0;
+        overflow: hidden;
+        pointer-events: none;
+        transform: translateY(-4px);
+        transition: max-height 0.22s ease, opacity 0.16s ease, transform 0.18s ease;
+      }
+      .gallery-password-fields.is-open {
+        max-height: 180px;
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateY(0);
+      }
       .ui-dialog-error {
         margin: -4px 0 0;
         font-size: 12px;
@@ -3266,7 +3403,7 @@
               <div class="gallery-tabs" id="galleryTabs" role="tablist" aria-label="画廊"></div>
               <div class="gallery-tools">
                 <button class="mini-btn gallery-btn" id="newGalleryBtn" type="button" title="新建画廊" aria-label="新建画廊">+</button>
-                <button class="mini-btn gallery-btn" id="renameGalleryBtn" type="button" title="重命名当前画廊" aria-label="重命名当前画廊">
+                <button class="mini-btn gallery-btn" id="renameGalleryBtn" type="button" title="编辑当前画廊" aria-label="编辑当前画廊">
                   <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 1 1 3 3L7 19l-4 1 1-4 12.5-12.5Z"/></svg>
                 </button>
                 <button class="mini-btn gallery-btn gallery-btn-danger" id="deleteGalleryBtn" type="button" title="删除当前画廊" aria-label="删除当前画廊">
@@ -3324,6 +3461,7 @@
         <p class="ui-dialog-message" id="uiDialogMessage"></p>
         <input class="ui-dialog-input" id="uiDialogInput" type="text" hidden />
         <select class="ui-dialog-select" id="uiDialogSelect" hidden></select>
+        <div class="ui-dialog-custom" id="uiDialogCustom" hidden></div>
         <div class="ui-dialog-error" id="uiDialogError" hidden></div>
         <div class="ui-dialog-actions">
           <button class="ui-dialog-btn ui-dialog-cancel" id="uiDialogCancel" type="button">取消</button>
@@ -3495,6 +3633,7 @@
       const uiDialogMessageEl = document.querySelector("#uiDialogMessage");
       const uiDialogInputEl = document.querySelector("#uiDialogInput");
       const uiDialogSelectEl = document.querySelector("#uiDialogSelect");
+      const uiDialogCustomEl = document.querySelector("#uiDialogCustom");
       const uiDialogErrorEl = document.querySelector("#uiDialogError");
       const uiDialogConfirmBtn = document.querySelector("#uiDialogConfirm");
       const uiDialogCancelBtn = document.querySelector("#uiDialogCancel");
@@ -3512,6 +3651,8 @@
         uiDialogInputEl.value = "";
         uiDialogSelectEl.hidden = true;
         uiDialogSelectEl.replaceChildren();
+        uiDialogCustomEl.hidden = true;
+        uiDialogCustomEl.replaceChildren();
         uiDialogErrorEl.hidden = true;
         uiDialogErrorEl.textContent = "";
         document.removeEventListener("keydown", uiDialogKeyHandler, true);
@@ -3555,6 +3696,20 @@
             }
           }
           uiDialogClose(value);
+        } else if (uiDialogActive.type === "custom") {
+          const result = typeof uiDialogActive.submit === "function"
+            ? uiDialogActive.submit()
+            : true;
+          if (result && result.error) {
+            uiDialogErrorEl.textContent = result.error;
+            uiDialogErrorEl.hidden = false;
+            if (result.focus && typeof result.focus.focus === "function") {
+              result.focus.focus();
+              if (typeof result.focus.select === "function") result.focus.select();
+            }
+            return;
+          }
+          uiDialogClose(result);
         } else {
           uiDialogClose(true);
         }
@@ -3578,11 +3733,13 @@
         inputType = "text",
         choices = [],
         validate,
+        customRender,
+        submit,
         cancelValue,
       }) {
         return new Promise(resolve => {
           if (uiDialogActive) uiDialogClose(uiDialogActive.cancelValue);
-          uiDialogActive = { type, resolve, cancelValue, validate };
+          uiDialogActive = { type, resolve, cancelValue, validate, submit };
           uiDialogTitleEl.textContent = title || "";
           uiDialogTitleEl.hidden = !title;
           uiDialogMessageEl.textContent = message || "";
@@ -3592,6 +3749,8 @@
           uiDialogInputEl.placeholder = placeholder || "";
           uiDialogInputEl.type = inputType || "text";
           uiDialogSelectEl.hidden = type !== "select";
+          uiDialogCustomEl.hidden = type !== "custom";
+          uiDialogCustomEl.replaceChildren();
           if (type === "select") {
             uiDialogSelectEl.replaceChildren(...choices.map(choice => {
               const option = document.createElement("option");
@@ -3603,6 +3762,8 @@
             if (defaultValue && choices.some(choice => String(choice.value) === String(defaultValue))) {
               uiDialogSelectEl.value = String(defaultValue);
             }
+          } else if (type === "custom" && typeof customRender === "function") {
+            customRender(uiDialogCustomEl);
           }
           uiDialogErrorEl.hidden = true;
           uiDialogErrorEl.textContent = "";
@@ -3619,6 +3780,10 @@
               uiDialogInputEl.select();
             } else if (type === "select") {
               uiDialogSelectEl.focus();
+            } else if (type === "custom") {
+              const focusTarget = uiDialogCustomEl.querySelector("[data-autofocus]") || uiDialogConfirmBtn;
+              focusTarget.focus();
+              if (typeof focusTarget.select === "function") focusTarget.select();
             } else {
               uiDialogConfirmBtn.focus();
             }
@@ -3652,6 +3817,7 @@
           message,
           defaultValue,
           placeholder: options.placeholder || "",
+          inputType: options.inputType || "text",
           confirmText: options.confirmText || "确定",
           cancelText: options.cancelText || "取消",
           validate: options.validate,
@@ -3828,6 +3994,209 @@
           providerSelect.title = providerNote.textContent;
         }
       }
+      function galleryById(id) {
+        return (galleries || []).find(gallery => gallery.id === id) || null;
+      }
+      function mergeGallery(updated) {
+        if (!updated || !updated.id) return;
+        const index = galleries.findIndex(gallery => gallery.id === updated.id);
+        if (index >= 0) galleries[index] = { ...galleries[index], ...updated };
+        else galleries.push(updated);
+        renderGalleryTabs();
+      }
+      function isGalleryLockedError(data) {
+        const detail = data?.detail;
+        return !!(
+          data?.password_required ||
+          detail?.password_required ||
+          detail?.error?.type === "GalleryLocked"
+        );
+      }
+      async function responseError(res) {
+        const data = await res.json().catch(() => ({}));
+        return {
+          data,
+          message: formatError(data) || `HTTP ${res.status}`,
+        };
+      }
+      function galleryLockIcon() {
+        const icon = document.createElement("span");
+        icon.className = "gallery-tab-lock";
+        icon.setAttribute("aria-hidden", "true");
+        icon.innerHTML = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>';
+        return icon;
+      }
+      function createIosSwitch(title, hint, checked = false) {
+        const row = document.createElement("label");
+        row.className = "gallery-switch-row";
+        const copy = document.createElement("span");
+        copy.className = "gallery-switch-copy";
+        const titleEl = document.createElement("span");
+        titleEl.className = "gallery-switch-title";
+        titleEl.textContent = title;
+        const hintEl = document.createElement("span");
+        hintEl.className = "gallery-switch-hint";
+        hintEl.textContent = hint || "";
+        copy.append(titleEl, hintEl);
+        const shell = document.createElement("span");
+        shell.className = "ios-switch";
+        const input = document.createElement("input");
+        input.type = "checkbox";
+        input.checked = checked;
+        input.setAttribute("role", "switch");
+        const track = document.createElement("span");
+        track.className = "ios-switch-track";
+        shell.append(input, track);
+        row.append(copy, shell);
+        return { row, input, hintEl };
+      }
+      function openGallerySettingsDialog(gallery = null) {
+        const isEdit = !!gallery;
+        const isProtected = !!gallery?.password_protected;
+        let passwordEnabled = isProtected;
+        let nameInput;
+        let passwordInput;
+        let confirmInput;
+        let enableSwitch;
+        let passwordFields;
+
+        function syncGalleryPasswordControls() {
+          if (!enableSwitch || !passwordFields) return;
+          enableSwitch.input.checked = passwordEnabled;
+          enableSwitch.hintEl.textContent = passwordEnabled
+            ? (isProtected ? "留空表示保留当前密码。" : "填写密码后创建加密画廊。")
+            : (isProtected ? "保存后会移除这个画廊的密码。" : "关闭后不会显示密码输入区。");
+          passwordFields.classList.toggle("is-open", passwordEnabled);
+          passwordFields.setAttribute("aria-hidden", passwordEnabled ? "false" : "true");
+          passwordInput.type = "password";
+          confirmInput.type = "password";
+          if (!passwordEnabled) {
+            passwordInput.value = "";
+            confirmInput.value = "";
+          }
+        }
+
+        return openUiDialog({
+          type: "custom",
+          title: isEdit ? "编辑画廊" : "新建画廊",
+          confirmText: isEdit ? "保存" : "创建",
+          cancelText: "取消",
+          cancelValue: null,
+          customRender: container => {
+            const formEl = document.createElement("div");
+            formEl.className = "gallery-form";
+
+            const nameField = document.createElement("label");
+            nameField.className = "gallery-form-field";
+            const nameLabel = document.createElement("span");
+            nameLabel.className = "gallery-form-label";
+            nameLabel.textContent = "画廊名称";
+            nameInput = document.createElement("input");
+            nameInput.className = "gallery-form-input";
+            nameInput.type = "text";
+            nameInput.maxLength = 60;
+            nameInput.value = gallery?.name || "";
+            nameInput.placeholder = "例如：风景、产品图、角色设计";
+            nameInput.dataset.autofocus = "true";
+            nameField.append(nameLabel, nameInput);
+
+            const switches = document.createElement("div");
+            switches.className = "gallery-switches";
+            enableSwitch = createIosSwitch(
+              "启用密码",
+              "",
+              passwordEnabled
+            );
+            switches.append(enableSwitch.row);
+
+            passwordFields = document.createElement("div");
+            passwordFields.className = "gallery-password-fields";
+            const passwordField = document.createElement("label");
+            passwordField.className = "gallery-form-field";
+            const passwordLabel = document.createElement("span");
+            passwordLabel.className = "gallery-form-label";
+            passwordLabel.textContent = "密码";
+            passwordInput = document.createElement("input");
+            passwordInput.className = "gallery-form-input";
+            passwordInput.type = "password";
+            passwordInput.autocomplete = "new-password";
+            passwordField.append(passwordLabel, passwordInput);
+
+            const confirmField = document.createElement("label");
+            confirmField.className = "gallery-form-field";
+            const confirmLabel = document.createElement("span");
+            confirmLabel.className = "gallery-form-label";
+            confirmLabel.textContent = "确认密码";
+            confirmInput = document.createElement("input");
+            confirmInput.className = "gallery-form-input";
+            confirmInput.type = "password";
+            confirmInput.autocomplete = "new-password";
+            confirmField.append(confirmLabel, confirmInput);
+            passwordFields.append(passwordField, confirmField);
+
+            enableSwitch.input.addEventListener("change", () => {
+              passwordEnabled = enableSwitch.input.checked;
+              syncGalleryPasswordControls();
+              if (passwordEnabled) passwordInput.focus();
+            });
+
+            formEl.append(nameField, switches, passwordFields);
+            container.append(formEl);
+            syncGalleryPasswordControls();
+          },
+          submit: () => {
+            const name = (nameInput?.value || "").trim();
+            if (!name) return { error: "请输入画廊名称", focus: nameInput };
+            if (name.length > 60) return { error: "名称最多 60 个字符", focus: nameInput };
+
+            const body = {};
+            if (!isEdit || name !== gallery.name) body.name = name;
+            if (!passwordEnabled) {
+              if (isProtected) body.clear_password = true;
+            } else {
+              const password = passwordInput.value;
+              const repeated = confirmInput.value;
+              if (!password && isProtected) return body;
+              if (!password) return { error: "请输入密码", focus: passwordInput };
+              if (!repeated) return { error: "请确认密码", focus: confirmInput };
+              if (password !== repeated) return { error: "两次输入的密码不一致", focus: confirmInput };
+              body.password = password;
+            }
+            return body;
+          },
+        });
+      }
+      async function ensureGalleryUnlocked(galleryId, options = {}) {
+        const gallery = galleryById(galleryId || DEFAULT_GALLERY_ID);
+        if (!gallery) return false;
+        const unlockExpiresAt = Number(gallery.unlock_expires_at) || 0;
+        const unlockStillFresh = gallery.unlocked && (!unlockExpiresAt || unlockExpiresAt > Math.floor(Date.now() / 1000) + 15);
+        if (!options.force && (!gallery.password_protected || unlockStillFresh)) return true;
+        const password = await uiPrompt(`输入画廊 “${gallery.name || gallery.id}” 的密码。`, "", {
+          title: "解锁画廊",
+          inputType: "password",
+          confirmText: "解锁",
+          validate: value => (value ? "" : "请输入密码"),
+        });
+        if (password === null) return false;
+        try {
+          const res = await fetch(`/v1/galleries/${encodeURIComponent(gallery.id)}/unlock`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ password }),
+          });
+          if (!res.ok) {
+            const error = await responseError(res);
+            throw new Error(error.message);
+          }
+          const updated = await res.json();
+          mergeGallery({ ...gallery, ...updated, unlocked: true });
+          return true;
+        } catch (error) {
+          await uiAlert(`解锁失败：${error.message}`, { title: "解锁失败" });
+          return false;
+        }
+      }
       function renderGalleryTabs() {
         if (!galleryTabs) return;
         if (!galleries.length) {
@@ -3841,8 +4210,15 @@
             const button = document.createElement("button");
             button.type = "button";
             button.className = "gallery-tab";
-            button.textContent = gallery.name || gallery.id;
-            button.title = gallery.name || gallery.id;
+            const label = document.createElement("span");
+            label.className = "gallery-tab-label";
+            label.textContent = gallery.name || gallery.id;
+            if (gallery.password_protected) button.append(galleryLockIcon());
+            button.append(label);
+            button.title = [
+              gallery.name || gallery.id,
+              gallery.password_protected ? (gallery.unlocked ? "已解锁" : "需要密码") : "",
+            ].filter(Boolean).join(" · ");
             button.dataset.galleryId = gallery.id;
             button.setAttribute("role", "tab");
             const isActive = gallery.id === selectedGalleryId;
@@ -3854,7 +4230,7 @@
           }));
         }
         const isDefault = selectedGalleryId === DEFAULT_GALLERY_ID;
-        if (renameGalleryBtn) renameGalleryBtn.disabled = isDefault;
+        if (renameGalleryBtn) renameGalleryBtn.disabled = isDefault || !galleryById(selectedGalleryId);
         if (deleteGalleryBtn) deleteGalleryBtn.disabled = isDefault;
       }
       function scrollActiveGalleryTabIntoView() {
@@ -3891,6 +4267,10 @@
       async function setGallery(id) {
         if (!id) id = DEFAULT_GALLERY_ID;
         if (!galleries.find(gallery => gallery.id === id)) return;
+        if (!(await ensureGalleryUnlocked(id))) {
+          renderGalleryTabs();
+          return;
+        }
         selectedGalleryId = id;
         localStorage.setItem(galleryStorageKey, id);
         renderGalleryTabs();
@@ -3900,27 +4280,17 @@
         await loadHistory();
       }
       async function handleNewGallery() {
-        const name = (await uiPrompt("给新画廊起个名字，会用来归类后续生成或编辑的图片。", "", {
-          title: "新建画廊",
-          placeholder: "例如：风景、产品图、角色设计…",
-          confirmText: "创建",
-          validate: value => {
-            const text = (value || "").trim();
-            if (!text) return "请输入画廊名称";
-            if (text.length > 60) return "名称最多 60 个字符";
-            return "";
-          },
-        }) || "").trim();
-        if (!name) return;
+        const body = await openGallerySettingsDialog();
+        if (!body) return;
         try {
           const res = await fetch("/v1/galleries", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name }),
+            body: JSON.stringify(body),
           });
           if (!res.ok) {
-            const data = await res.json().catch(() => ({}));
-            throw new Error(data.detail || `HTTP ${res.status}`);
+            const error = await responseError(res);
+            throw new Error(error.message);
           }
           const created = await res.json();
           await loadGalleries();
@@ -3933,36 +4303,32 @@
         if (selectedGalleryId === DEFAULT_GALLERY_ID) return;
         const current = galleries.find(gallery => gallery.id === selectedGalleryId);
         if (!current) return;
-        const name = (await uiPrompt(`修改画廊 “${current.name}” 的名称：`, current.name, {
-          title: "重命名画廊",
-          confirmText: "保存",
-          validate: value => {
-            const text = (value || "").trim();
-            if (!text) return "请输入画廊名称";
-            if (text.length > 60) return "名称最多 60 个字符";
-            return "";
-          },
-        }) || "").trim();
-        if (!name || name === current.name) return;
+        if (!(await ensureGalleryUnlocked(current.id))) return;
+        const body = await openGallerySettingsDialog(current);
+        if (!body) return;
+        if (!Object.keys(body).length) return;
         try {
           const res = await fetch(`/v1/galleries/${encodeURIComponent(selectedGalleryId)}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ name }),
+            body: JSON.stringify(body),
           });
           if (!res.ok) {
-            const data = await res.json().catch(() => ({}));
-            throw new Error(data.detail || `HTTP ${res.status}`);
+            const error = await responseError(res);
+            throw new Error(error.message);
           }
+          const updated = await res.json().catch(() => null);
+          if (updated) mergeGallery(updated);
           await loadGalleries();
         } catch (error) {
-          uiAlert(`重命名失败：${error.message}`, { title: "重命名失败" });
+          uiAlert(`保存失败：${error.message}`, { title: "画廊保存失败" });
         }
       }
       async function handleDeleteGallery() {
         if (selectedGalleryId === DEFAULT_GALLERY_ID) return;
         const current = galleries.find(gallery => gallery.id === selectedGalleryId);
         if (!current) return;
+        if (!(await ensureGalleryUnlocked(current.id))) return;
         const confirmed = await uiConfirm(
           `删除画廊 “${current.name}” 将同时删除该画廊下的所有历史图片，操作不可恢复。是否继续？`,
           { title: "删除画廊", confirmText: "删除", cancelText: "取消", danger: true }
@@ -3973,8 +4339,8 @@
             method: "DELETE",
           });
           if (!res.ok) {
-            const data = await res.json().catch(() => ({}));
-            throw new Error(data.detail || `HTTP ${res.status}`);
+            const error = await responseError(res);
+            throw new Error(error.message);
           }
           await loadGalleries();
           await setGallery(DEFAULT_GALLERY_ID);
@@ -4379,13 +4745,24 @@
       }
       async function loadImageUrlAsFile(src, fallback = "history-image.png") {
         if (!src) throw new Error("This history item has no image file to edit.");
-        const imageRes = await fetch(src);
+        let imageRes = await fetch(src);
+        if (!imageRes.ok && imageRes.status === 403) {
+          const unlocked = await ensureGalleryUnlocked(selectedGalleryId, { force: true });
+          if (unlocked) imageRes = await fetch(src);
+        }
         if (!imageRes.ok) throw new Error(`Image load failed: HTTP ${imageRes.status}`);
         const blob = await imageRes.blob();
         return new File([blob], filenameFromSource(src, fallback), { type: blob.type || "image/png" });
       }
       async function loadHistoryImageAsFile(record) {
-        const detailRes = await fetch(`/v1/history/${record.id}`);
+        let detailRes = await fetch(`/v1/history/${record.id}`);
+        if (!detailRes.ok) {
+          const error = await responseError(detailRes);
+          if (isGalleryLockedError(error.data)) {
+            const unlocked = await ensureGalleryUnlocked(selectedGalleryId, { force: true });
+            if (unlocked) detailRes = await fetch(`/v1/history/${record.id}`);
+          }
+        }
         if (!detailRes.ok) throw new Error(`History detail failed: HTTP ${detailRes.status}`);
         const detail = await detailRes.json();
         const src = detail.file || detail.url;
@@ -4722,8 +5099,9 @@
             { title: "删除历史记录", confirmText: "删除", danger: true }
           );
           if (!ok) return;
+          if (!(await ensureGalleryUnlocked(selectedGalleryId))) return;
           const res = await fetch(`/v1/history/${record.id}`, { method: "DELETE" });
-          if (!res.ok) { uiAlert(`删除失败：HTTP ${res.status}`, { title: "删除失败" }); return; }
+          if (!res.ok) { const error = await responseError(res); uiAlert(`删除失败：${error.message}`, { title: "删除失败" }); return; }
           selectedHistoryIds.delete(record.id);
           await loadHistory();
         });
@@ -4836,7 +5214,18 @@
         try {
           const url = `/v1/history?gallery_id=${encodeURIComponent(selectedGalleryId)}`;
           const res = await fetch(url);
-          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          if (!res.ok) {
+            const error = await responseError(res);
+            if (isGalleryLockedError(error.data)) {
+              const unlocked = await ensureGalleryUnlocked(selectedGalleryId, { force: true });
+              if (unlocked) return loadHistory();
+              allHistoryRecords = [];
+              historyCount.textContent = "0";
+              history.replaceChildren(Object.assign(document.createElement("div"), { className: "empty-state", style: "min-height:40px;font-size:11px;", textContent: "这个画廊已加密" }));
+              return;
+            }
+            throw new Error(error.message);
+          }
           const data = await res.json();
           allHistoryRecords = data.images || [];
           renderHistory(allHistoryRecords, { keepRenderedCount: renderedHistoryCount, preserveScroll: true });
@@ -4906,21 +5295,23 @@
       });
       downloadSelected.addEventListener("click", async () => {
         if (!selectedHistoryIds.size) return;
+        if (!(await ensureGalleryUnlocked(selectedGalleryId))) return;
         const res = await fetch("/v1/history/download", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [...selectedHistoryIds] }) });
-        if (!res.ok) { uiAlert(`下载失败：HTTP ${res.status}`, { title: "批量下载失败" }); return; }
+        if (!res.ok) { const error = await responseError(res); uiAlert(`下载失败：${error.message}`, { title: "批量下载失败" }); return; }
         const blob = await res.blob(); const url = URL.createObjectURL(blob);
         const a = Object.assign(document.createElement("a"), { href: url, download: "history-images.zip" });
         document.body.append(a); a.click(); a.remove(); URL.revokeObjectURL(url);
       });
       deleteSelected.addEventListener("click", async () => {
         if (!selectedHistoryIds.size) return;
+        if (!(await ensureGalleryUnlocked(selectedGalleryId))) return;
         const ok = await uiConfirm(
           `确定要删除选中的 ${selectedHistoryIds.size} 条历史记录吗？关联的本地图片文件也会被删除。`,
           { title: "批量删除", confirmText: "删除", danger: true }
         );
         if (!ok) return;
         const res = await fetch("/v1/history/delete", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ids: [...selectedHistoryIds] }) });
-        if (!res.ok) { uiAlert(`删除失败：HTTP ${res.status}`, { title: "批量删除失败" }); return; }
+        if (!res.ok) { const error = await responseError(res); uiAlert(`删除失败：${error.message}`, { title: "批量删除失败" }); return; }
         selectingHistory = false; selectedHistoryIds.clear(); await loadHistory();
       });
       moveSelected.addEventListener("click", async () => {
@@ -4947,6 +5338,8 @@
           }
         );
         if (!target) return;
+        if (!(await ensureGalleryUnlocked(selectedGalleryId))) return;
+        if (!(await ensureGalleryUnlocked(target))) return;
         try {
           const res = await fetch("/v1/history/move", {
             method: "POST",
@@ -4954,8 +5347,8 @@
             body: JSON.stringify({ ids: [...selectedHistoryIds], gallery_id: target }),
           });
           if (!res.ok) {
-            const data = await res.json().catch(() => ({}));
-            throw new Error(data.detail || `HTTP ${res.status}`);
+            const error = await responseError(res);
+            throw new Error(error.message);
           }
           const data = await res.json().catch(() => ({}));
           selectingHistory = false; selectedHistoryIds.clear();
@@ -4973,7 +5366,15 @@
         modalMeta.textContent = [formatOperation(record.operation), formatSize(record.size), formatImageSpec(record), formatFileSize(record.file_size_bytes), formatQuality(record), formatOutputFormat(record.output_format), formatDate(record.created_at), formatStatus(record.status)].filter(Boolean).join(" \u00b7 ");
         modal.hidden = false;
         const res = await fetch(`/v1/history/${record.id}`);
-        if (!res.ok) { modalPrompt.textContent = `Load failed: HTTP ${res.status}`; return; }
+        if (!res.ok) {
+          const error = await responseError(res);
+          if (isGalleryLockedError(error.data)) {
+            const unlocked = await ensureGalleryUnlocked(selectedGalleryId, { force: true });
+            if (unlocked) return openModal(record);
+          }
+          modalPrompt.textContent = `Load failed: ${error.message}`;
+          return;
+        }
         const detail = await res.json();
         const src = detail.file || detail.url;
         record = detail; activeHistoryRecord = record;
@@ -5279,6 +5680,7 @@
           editImageInput.focus();
           return;
         }
+        if (!(await ensureGalleryUnlocked(selectedGalleryId))) return;
         const token = ++activePollToken; watchedJobId = null; watchedJob = null;
         submit.disabled = true;
         const count = Math.min(5, Math.max(1, parseInt(form.querySelector('[name="n"]').value, 10) || 1));
@@ -5425,6 +5827,12 @@
           label.className = "drag-target-label";
           label.textContent = gallery.name || gallery.id;
           el.append(icon, label);
+          if (gallery.password_protected) {
+            const hint = document.createElement("span");
+            hint.className = "drag-target-hint";
+            hint.textContent = gallery.unlocked ? "已解锁" : "需要密码";
+            el.append(hint);
+          }
           dragTargetsEl.append(el);
         });
         const trashEl = document.createElement("div");
@@ -5495,6 +5903,7 @@
         }
       }
       async function trashHistoryByDrag(record) {
+        if (!(await ensureGalleryUnlocked(selectedGalleryId))) return;
         try {
           const res = await fetch("/v1/history/trash", {
             method: "POST",
@@ -5502,8 +5911,8 @@
             body: JSON.stringify({ ids: [record.id] }),
           });
           if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            throw new Error(err.detail || `HTTP ${res.status}`);
+            const error = await responseError(res);
+            throw new Error(error.message);
           }
         } catch (error) {
           uiAlert(`放入回收站失败：${error.message}`, { title: "操作失败" });
@@ -5513,6 +5922,8 @@
         await loadHistory();
       }
       async function moveHistoryByDragTo(record, galleryId) {
+        if (!(await ensureGalleryUnlocked(selectedGalleryId))) return;
+        if (!(await ensureGalleryUnlocked(galleryId))) return;
         try {
           const res = await fetch("/v1/history/move", {
             method: "POST",
@@ -5520,8 +5931,8 @@
             body: JSON.stringify({ ids: [record.id], gallery_id: galleryId }),
           });
           if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            throw new Error(err.detail || `HTTP ${res.status}`);
+            const error = await responseError(res);
+            throw new Error(error.message);
           }
         } catch (error) {
           uiAlert(`归档失败：${error.message}`, { title: "归档失败" });
@@ -5776,8 +6187,8 @@
             body: JSON.stringify({ ids: [id] }),
           });
           if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            throw new Error(err.detail || `HTTP ${res.status}`);
+            const error = await responseError(res);
+            throw new Error(error.message);
           }
         } catch (e) {
           uiAlert(`恢复失败：${e.message}`, { title: "操作失败" });
@@ -5798,8 +6209,8 @@
             body: JSON.stringify({ ids: [id] }),
           });
           if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            throw new Error(err.detail || `HTTP ${res.status}`);
+            const error = await responseError(res);
+            throw new Error(error.message);
           }
         } catch (e) {
           uiAlert(`删除失败：${e.message}`, { title: "操作失败" });
@@ -5816,8 +6227,8 @@
         try {
           const res = await fetch("/v1/trash/empty", { method: "POST" });
           if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            throw new Error(err.detail || `HTTP ${res.status}`);
+            const error = await responseError(res);
+            throw new Error(error.message);
           }
         } catch (e) {
           uiAlert(`清空失败：${e.message}`, { title: "操作失败" });
@@ -5838,8 +6249,8 @@
             body: JSON.stringify({ retention_days: value }),
           });
           if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            throw new Error(err.detail || `HTTP ${res.status}`);
+            const error = await responseError(res);
+            throw new Error(error.message);
           }
           const data = await res.json();
           trashRetentionDays = Number(data.retention_days) || value;
@@ -5863,6 +6274,7 @@
       async function retryAllFailed() {
         const failed = visibleHistoryRecords.filter(r => r.status === "failed" && r.prompt);
         if (!failed.length) return;
+        if (!(await ensureGalleryUnlocked(selectedGalleryId))) return;
         const ok = await uiConfirm(
           `将重新提交 ${failed.length} 个失败的任务（使用原始参数）。继续？`,
           { title: "重试所有失败任务", confirmText: "全部重试" }
@@ -5902,6 +6314,7 @@
       async function deleteAllFailed() {
         const failed = visibleHistoryRecords.filter(r => r.status === "failed");
         if (!failed.length) return;
+        if (!(await ensureGalleryUnlocked(selectedGalleryId))) return;
         const ok = await uiConfirm(
           `确定删除当前画廊中 ${failed.length} 条失败记录？`,
           { title: "删除所有失败记录", confirmText: "删除", danger: true }
@@ -5915,8 +6328,8 @@
             body: JSON.stringify({ ids }),
           });
           if (!res.ok) {
-            const err = await res.json().catch(() => ({}));
-            throw new Error(err.detail || `HTTP ${res.status}`);
+            const error = await responseError(res);
+            throw new Error(error.message);
           }
         } catch (e) {
           uiAlert(`删除失败：${e.message}`, { title: "操作失败" });

@@ -127,6 +127,10 @@ DEFAULT_GALLERY_ID = "default"
 DEFAULT_GALLERY_NAME = "默认画廊"
 MAX_GALLERIES = 50
 MAX_GALLERY_NAME_LENGTH = 60
+GALLERY_UNLOCK_COOKIE = "image_cli_gallery_unlocks"
+GALLERY_UNLOCK_MAX_AGE_SECONDS = 60 * 60 * 24 * 7
+GALLERY_PASSWORD_HASH_ALGORITHM = "pbkdf2_sha256"
+GALLERY_PASSWORD_HASH_ITERATIONS = 260_000
 TRASH_MIN_RETENTION_DAYS = 1
 TRASH_MAX_RETENTION_DAYS = 365
 TRASH_LIMIT = 1000
@@ -789,6 +793,174 @@ def _galleries_path() -> Path:
     return settings.output_dir / "galleries.json"
 
 
+def _gallery_password_hash(password: str, salt: str | None = None) -> str:
+    salt_text = salt or base64.urlsafe_b64encode(os.urandom(16)).decode("utf-8")
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt_text.encode("utf-8"),
+        GALLERY_PASSWORD_HASH_ITERATIONS,
+    )
+    digest_text = base64.urlsafe_b64encode(digest).decode("utf-8")
+    return (
+        f"{GALLERY_PASSWORD_HASH_ALGORITHM}$"
+        f"{GALLERY_PASSWORD_HASH_ITERATIONS}$"
+        f"{salt_text}$"
+        f"{digest_text}"
+    )
+
+
+def _verify_gallery_password(password: str, stored_hash: str) -> bool:
+    try:
+        algorithm, iterations_text, salt, digest_text = stored_hash.split("$", 3)
+        iterations = int(iterations_text)
+    except (ValueError, TypeError):
+        return False
+    if algorithm != GALLERY_PASSWORD_HASH_ALGORITHM or iterations <= 0:
+        return False
+    digest = hashlib.pbkdf2_hmac(
+        "sha256",
+        password.encode("utf-8"),
+        salt.encode("utf-8"),
+        iterations,
+    )
+    expected_digest = base64.urlsafe_b64encode(digest).decode("utf-8")
+    expected = f"{algorithm}${iterations}${salt}${expected_digest}"
+    return hmac.compare_digest(stored_hash, expected)
+
+
+def _gallery_has_password(gallery: dict[str, Any]) -> bool:
+    return bool(str(gallery.get("password_hash") or "").strip())
+
+
+def _gallery_password_version(gallery: dict[str, Any]) -> int:
+    if not _gallery_has_password(gallery):
+        return 0
+    return (
+        _safe_int(gallery.get("password_updated_at"))
+        or _safe_int(gallery.get("created_at"))
+        or 1
+    )
+
+
+def _new_gallery_password_version() -> int:
+    return int(time.time() * 1000)
+
+
+def _require_gallery_unlock_secret() -> None:
+    if settings.session_secret:
+        return
+    raise HTTPException(
+        status_code=503,
+        detail=(
+            "APP_SESSION_SECRET is required before password-protected galleries "
+            "can be used."
+        ),
+    )
+
+
+def _decode_gallery_unlocks(request: Request) -> dict[str, dict[str, int]]:
+    if not settings.session_secret:
+        return {}
+    raw_token = request.cookies.get(GALLERY_UNLOCK_COOKIE)
+    if not raw_token or "." not in raw_token:
+        return {}
+    payload_b64, signature = raw_token.rsplit(".", 1)
+    expected = _sign_session(f"gallery_unlock:{payload_b64}")
+    if not hmac.compare_digest(signature, expected):
+        return {}
+    try:
+        decoded = base64.urlsafe_b64decode(payload_b64.encode("utf-8")).decode("utf-8")
+        data = json.loads(decoded)
+    except (ValueError, binascii.Error, json.JSONDecodeError):
+        return {}
+    galleries = data.get("galleries") if isinstance(data, dict) else None
+    if not isinstance(galleries, dict):
+        return {}
+    now = int(time.time())
+    unlocks: dict[str, dict[str, int]] = {}
+    for raw_gallery_id, raw_entry in galleries.items():
+        if not isinstance(raw_entry, dict):
+            continue
+        gallery_id = _safe_provider_id(raw_gallery_id, "")
+        expires_at = _safe_int(raw_entry.get("expires_at"))
+        password_version = _safe_int(raw_entry.get("password_version"))
+        if not gallery_id or expires_at <= now or not password_version:
+            continue
+        unlocks[gallery_id] = {
+            "expires_at": expires_at,
+            "password_version": password_version,
+        }
+    return unlocks
+
+
+def _make_gallery_unlock_token(unlocks: dict[str, dict[str, int]]) -> str:
+    _require_gallery_unlock_secret()
+    now = int(time.time())
+    clean_unlocks = {
+        _safe_provider_id(gallery_id, ""): {
+            "expires_at": _safe_int(entry.get("expires_at")),
+            "password_version": _safe_int(entry.get("password_version")),
+        }
+        for gallery_id, entry in unlocks.items()
+        if _safe_provider_id(gallery_id, "")
+        and _safe_int(entry.get("expires_at")) > now
+        and _safe_int(entry.get("password_version"))
+    }
+    payload = json.dumps(
+        {"galleries": clean_unlocks},
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    )
+    payload_b64 = base64.urlsafe_b64encode(payload.encode("utf-8")).decode("utf-8")
+    signature = _sign_session(f"gallery_unlock:{payload_b64}")
+    return f"{payload_b64}.{signature}"
+
+
+def _set_gallery_unlocked(
+    response: Response, request: Request, gallery: dict[str, Any]
+) -> None:
+    _require_gallery_unlock_secret()
+    gallery_id = str(gallery.get("id") or "").strip()
+    if not gallery_id or not _gallery_has_password(gallery):
+        return
+    unlocks = _decode_gallery_unlocks(request)
+    unlocks[gallery_id] = {
+        "expires_at": int(time.time()) + GALLERY_UNLOCK_MAX_AGE_SECONDS,
+        "password_version": _gallery_password_version(gallery),
+    }
+    response.set_cookie(
+        GALLERY_UNLOCK_COOKIE,
+        _make_gallery_unlock_token(unlocks),
+        max_age=GALLERY_UNLOCK_MAX_AGE_SECONDS,
+        httponly=True,
+        samesite="lax",
+    )
+
+
+def _is_gallery_unlocked(request: Request, gallery: dict[str, Any]) -> bool:
+    return _gallery_unlock_entry(request, gallery) is not None
+
+
+def _gallery_unlock_entry(
+    request: Request, gallery: dict[str, Any]
+) -> dict[str, int] | None:
+    if not _gallery_has_password(gallery):
+        return {"expires_at": 0, "password_version": 0}
+    if not settings.session_secret:
+        return None
+    gallery_id = str(gallery.get("id") or "").strip()
+    entry = _decode_gallery_unlocks(request).get(gallery_id)
+    if not entry:
+        return None
+    if _safe_int(entry.get("expires_at")) <= int(time.time()):
+        return None
+    if _safe_int(entry.get("password_version")) != _gallery_password_version(gallery):
+        return None
+    return entry
+
+
 def _normalize_galleries(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     seen_ids: set[str] = set()
     normalized: list[dict[str, Any]] = []
@@ -810,6 +982,12 @@ def _normalize_galleries(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "created_at": created_at,
             }
         )
+        password_hash = str(record.get("password_hash") or "").strip()
+        if gallery_id != DEFAULT_GALLERY_ID and password_hash:
+            normalized[-1]["password_hash"] = password_hash
+            normalized[-1]["password_updated_at"] = (
+                _safe_int(record.get("password_updated_at")) or created_at or now
+            )
     if not has_default:
         normalized.insert(
             0,
@@ -840,12 +1018,34 @@ def _load_galleries() -> list[dict[str, Any]]:
         return normalized
 
 
-def _gallery_public(gallery: dict[str, Any]) -> dict[str, Any]:
+def _gallery_public(
+    gallery: dict[str, Any],
+    request: Request | None = None,
+    force_unlocked: bool = False,
+) -> dict[str, Any]:
+    password_protected = _gallery_has_password(gallery)
+    unlock_entry = _gallery_unlock_entry(request, gallery) if request else None
+    unlocked = force_unlocked or not password_protected or bool(unlock_entry)
     return {
         "id": gallery.get("id", ""),
         "name": gallery.get("name", ""),
         "created_at": _safe_int(gallery.get("created_at")),
+        "password_protected": password_protected,
+        "unlocked": unlocked,
+        "unlock_expires_at": (
+            int(time.time()) + GALLERY_UNLOCK_MAX_AGE_SECONDS
+            if force_unlocked and password_protected
+            else _safe_int((unlock_entry or {}).get("expires_at"))
+        ),
     }
+
+
+def _get_gallery(gallery_id: str) -> dict[str, Any] | None:
+    text = str(gallery_id or "").strip() or DEFAULT_GALLERY_ID
+    for gallery in _load_galleries():
+        if gallery["id"] == text:
+            return gallery
+    return None
 
 
 def _resolve_gallery_id(value: Any) -> str:
@@ -858,6 +1058,112 @@ def _resolve_gallery_id(value: Any) -> str:
             status_code=400, detail=f"Gallery '{text}' is not configured"
         )
     return text
+
+
+def _gallery_locked_exception(gallery: dict[str, Any]) -> HTTPException:
+    return HTTPException(
+        status_code=403,
+        detail={
+            "error": {
+                "type": "GalleryLocked",
+                "message": "这个画廊已设置密码，请先输入密码。",
+                "hint": "解锁状态会保存 7 天，过期后需要重新输入。",
+            },
+            "gallery_id": gallery.get("id", ""),
+            "password_required": True,
+        },
+    )
+
+
+def _require_gallery_access(request: Request, gallery_id: str | None) -> dict[str, Any]:
+    gallery = _get_gallery(gallery_id or DEFAULT_GALLERY_ID)
+    if gallery is None:
+        raise HTTPException(status_code=404, detail="画廊不存在")
+    if not _gallery_has_password(gallery):
+        return gallery
+    _require_gallery_unlock_secret()
+    if _is_gallery_unlocked(request, gallery):
+        return gallery
+    raise _gallery_locked_exception(gallery)
+
+
+def _can_access_gallery(request: Request, gallery_id: str | None) -> bool:
+    try:
+        _require_gallery_access(request, gallery_id)
+        return True
+    except HTTPException:
+        return False
+
+
+def _require_records_gallery_access(
+    request: Request, records: list[dict[str, Any]]
+) -> None:
+    gallery_ids = {
+        str(record.get("gallery_id") or DEFAULT_GALLERY_ID)
+        for record in records
+    }
+    for gallery_id in sorted(gallery_ids):
+        _require_gallery_access(request, gallery_id)
+
+
+def _filter_accessible_records(
+    request: Request, records: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    return [
+        record
+        for record in records
+        if _can_access_gallery(request, str(record.get("gallery_id") or DEFAULT_GALLERY_ID))
+    ]
+
+
+def _records_matching_ids(
+    records: list[dict[str, Any]], record_ids: list[str]
+) -> list[dict[str, Any]]:
+    wanted_ids = {str(item) for item in record_ids if str(item).strip()}
+    if not wanted_ids:
+        return []
+    return [record for record in records if str(record.get("id")) in wanted_ids]
+
+
+def _require_history_ids_access(request: Request, history_ids: list[str]) -> None:
+    _require_records_gallery_access(
+        request,
+        _records_matching_ids(_load_history(), history_ids),
+    )
+
+
+def _trash_record_gallery_id(record: dict[str, Any]) -> str:
+    gallery_id = str(
+        record.get("original_gallery_id")
+        or record.get("gallery_id")
+        or DEFAULT_GALLERY_ID
+    )
+    return gallery_id if _get_gallery(gallery_id) is not None else DEFAULT_GALLERY_ID
+
+
+def _require_trash_records_access(
+    request: Request, records: list[dict[str, Any]]
+) -> None:
+    gallery_ids = {_trash_record_gallery_id(record) for record in records}
+    for gallery_id in sorted(gallery_ids):
+        _require_gallery_access(request, gallery_id)
+
+
+def _filter_accessible_trash_records(
+    request: Request, records: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    return [
+        record
+        for record in records
+        if _can_access_gallery(request, _trash_record_gallery_id(record))
+    ]
+
+
+def _require_trash_ids_access(request: Request, trash_ids: list[str]) -> None:
+    _require_trash_records_access(
+        request,
+        _records_matching_ids(_load_trash(), trash_ids),
+    )
 
 
 def _trash_path() -> Path:
@@ -1447,8 +1753,53 @@ def _record_file_urls(record: dict[str, Any]) -> set[str]:
     }
 
 
+def _record_access_file_urls(record: dict[str, Any]) -> set[str]:
+    return {
+        str(record.get(key) or "")
+        for key in ("file", "source_file", "thumbnail_file")
+        if str(record.get(key) or "").startswith("/files/")
+    }
+
+
 def _history_file_references(records: list[dict[str, Any]]) -> set[str]:
     return set().union(*(_record_file_urls(record) for record in records))
+
+
+def _gallery_ids_for_file_url(file_url: str) -> set[str]:
+    gallery_ids: set[str] = set()
+    for record in _load_history():
+        if file_url in _record_access_file_urls(record):
+            gallery_ids.add(str(record.get("gallery_id") or DEFAULT_GALLERY_ID))
+    for record in _load_trash():
+        if file_url in _record_access_file_urls(record):
+            gallery_ids.add(
+                str(
+                    record.get("original_gallery_id")
+                    or record.get("gallery_id")
+                    or DEFAULT_GALLERY_ID
+                )
+            )
+    for job in _load_jobs():
+        if file_url in _collect_file_urls(job):
+            payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+            gallery_ids.add(str(payload.get("gallery_id") or DEFAULT_GALLERY_ID))
+    return gallery_ids
+
+
+def _require_file_access(request: Request, file_url: str) -> None:
+    gallery_ids = _gallery_ids_for_file_url(file_url)
+    if not gallery_ids:
+        return
+    locked_gallery_id: str | None = None
+    for gallery_id in sorted(gallery_ids):
+        gallery = _get_gallery(gallery_id)
+        if gallery is None or not _gallery_has_password(gallery):
+            return
+        if _is_gallery_unlocked(request, gallery):
+            return
+        locked_gallery_id = gallery_id
+    if locked_gallery_id:
+        _require_gallery_access(request, locked_gallery_id)
 
 
 def _delete_history_file(
@@ -1841,6 +2192,7 @@ async def login(request: Request) -> JSONResponse:
 def logout() -> RedirectResponse:
     response = RedirectResponse("/login", status_code=303)
     response.delete_cookie("image_cli_session")
+    response.delete_cookie(GALLERY_UNLOCK_COOKIE)
     return response
 
 
@@ -1988,6 +2340,7 @@ def serve_file(filename: str, request: Request) -> FileResponse:
     file_path = settings.output_dir / safe_name
     if not file_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
+    _require_file_access(request, f"/files/{safe_name}")
     return FileResponse(file_path)
 
 
@@ -1998,11 +2351,15 @@ def history(
     _require_auth(request)
     records = _load_history()
     if gallery_id:
+        gallery_id = _resolve_gallery_id(gallery_id)
+        _require_gallery_access(request, gallery_id)
         records = [
             record
             for record in records
             if str(record.get("gallery_id") or DEFAULT_GALLERY_ID) == gallery_id
         ]
+    else:
+        records = _filter_accessible_records(request, records)
     return {"images": [_history_public(record) for record in records]}
 
 
@@ -2019,7 +2376,7 @@ def providers(request: Request) -> dict[str, Any]:
 @app.get("/v1/galleries")
 def list_galleries(request: Request) -> dict[str, Any]:
     _require_auth(request)
-    gallery_list = [_gallery_public(gallery) for gallery in _load_galleries()]
+    gallery_list = [_gallery_public(gallery, request) for gallery in _load_galleries()]
     return {
         "galleries": gallery_list,
         "default_gallery_id": DEFAULT_GALLERY_ID,
@@ -2027,10 +2384,11 @@ def list_galleries(request: Request) -> dict[str, Any]:
 
 
 @app.post("/v1/galleries")
-async def create_gallery(request: Request) -> dict[str, Any]:
+async def create_gallery(request: Request, response: Response) -> dict[str, Any]:
     _require_auth(request)
     body = await request.json()
     name = str(body.get("name") or "").strip()
+    password = str(body.get("password") or "")
     if not name:
         raise HTTPException(status_code=400, detail="画廊名称不能为空")
     if len(name) > MAX_GALLERY_NAME_LENGTH:
@@ -2038,6 +2396,8 @@ async def create_gallery(request: Request) -> dict[str, Any]:
             status_code=400,
             detail=f"画廊名称最多 {MAX_GALLERY_NAME_LENGTH} 个字符",
         )
+    if password:
+        _require_gallery_unlock_secret()
 
     path = _galleries_path()
     with _json_file_lock(path, exclusive=True):
@@ -2060,40 +2420,108 @@ async def create_gallery(request: Request) -> dict[str, Any]:
             "name": name,
             "created_at": int(time.time()),
         }
+        if password:
+            new_gallery["password_hash"] = _gallery_password_hash(password)
+            new_gallery["password_updated_at"] = _new_gallery_password_version()
         galleries.append(new_gallery)
         _write_json_list_unlocked(path, _normalize_galleries(galleries))
-    _log_event("gallery_created", gallery_id=gallery_id, name=name)
-    return _gallery_public(new_gallery)
+    if password:
+        _set_gallery_unlocked(response, request, new_gallery)
+    _log_event(
+        "gallery_created",
+        gallery_id=gallery_id,
+        name=name,
+        password_protected=bool(password),
+    )
+    return _gallery_public(new_gallery, request, force_unlocked=bool(password))
+
+
+@app.post("/v1/galleries/{gallery_id}/unlock")
+async def unlock_gallery(
+    gallery_id: str, request: Request, response: Response
+) -> dict[str, Any]:
+    _require_auth(request)
+    gallery = _get_gallery(gallery_id)
+    if gallery is None:
+        raise HTTPException(status_code=404, detail="画廊不存在")
+    if not _gallery_has_password(gallery):
+        return _gallery_public(gallery, request, force_unlocked=True)
+    _require_gallery_unlock_secret()
+    body = await request.json()
+    password = str(body.get("password") or "")
+    if not password:
+        raise HTTPException(status_code=400, detail="请输入画廊密码")
+    if not _verify_gallery_password(password, str(gallery.get("password_hash") or "")):
+        raise HTTPException(status_code=401, detail="画廊密码不正确")
+    _set_gallery_unlocked(response, request, gallery)
+    _log_event("gallery_unlocked", gallery_id=gallery_id)
+    return _gallery_public(gallery, request, force_unlocked=True)
 
 
 @app.patch("/v1/galleries/{gallery_id}")
-async def rename_gallery(gallery_id: str, request: Request) -> dict[str, Any]:
+async def update_gallery(
+    gallery_id: str, request: Request, response: Response
+) -> dict[str, Any]:
     _require_auth(request)
     body = await request.json()
-    name = str(body.get("name") or "").strip()
-    if not name:
+    name_supplied = "name" in body
+    name = str(body.get("name") or "").strip() if name_supplied else ""
+    password = str(body.get("password") or "")
+    clear_password = bool(body.get("clear_password"))
+    if name_supplied and not name:
         raise HTTPException(status_code=400, detail="画廊名称不能为空")
-    if len(name) > MAX_GALLERY_NAME_LENGTH:
+    if name_supplied and len(name) > MAX_GALLERY_NAME_LENGTH:
         raise HTTPException(
             status_code=400,
             detail=f"画廊名称最多 {MAX_GALLERY_NAME_LENGTH} 个字符",
         )
+    if password and clear_password:
+        raise HTTPException(status_code=400, detail="password 和 clear_password 不能同时设置")
+    if not name_supplied and not password and not clear_password:
+        raise HTTPException(status_code=400, detail="没有可保存的画廊设置")
+    if gallery_id == DEFAULT_GALLERY_ID and (password or clear_password):
+        raise HTTPException(status_code=400, detail="默认画廊不能设置密码")
+    if password:
+        _require_gallery_unlock_secret()
 
     path = _galleries_path()
+    password_changed = False
     with _json_file_lock(path, exclusive=True):
         galleries = _normalize_galleries(_read_json_list_unlocked(path))
         target = next((gallery for gallery in galleries if gallery["id"] == gallery_id), None)
         if target is None:
             raise HTTPException(status_code=404, detail="画廊不存在")
-        if any(
-            gallery["id"] != gallery_id and gallery["name"] == name
-            for gallery in galleries
-        ):
-            raise HTTPException(status_code=400, detail=f"画廊 “{name}” 已存在")
-        target["name"] = name
+        if _gallery_has_password(target) and (name_supplied or password or clear_password):
+            if not settings.session_secret:
+                _require_gallery_unlock_secret()
+            if not _is_gallery_unlocked(request, target):
+                raise _gallery_locked_exception(target)
+        if name_supplied:
+            if any(
+                gallery["id"] != gallery_id and gallery["name"] == name
+                for gallery in galleries
+            ):
+                raise HTTPException(status_code=400, detail=f"画廊 “{name}” 已存在")
+            target["name"] = name
+        if password:
+            target["password_hash"] = _gallery_password_hash(password)
+            target["password_updated_at"] = _new_gallery_password_version()
+            password_changed = True
+        elif clear_password:
+            target.pop("password_hash", None)
+            target.pop("password_updated_at", None)
+            password_changed = True
         _write_json_list_unlocked(path, _normalize_galleries(galleries))
-    _log_event("gallery_renamed", gallery_id=gallery_id, name=name)
-    return _gallery_public(target)
+    if password:
+        _set_gallery_unlocked(response, request, target)
+    _log_event(
+        "gallery_updated",
+        gallery_id=gallery_id,
+        name=target.get("name"),
+        password_protected=_gallery_has_password(target),
+        password_changed=password_changed,
+    )
+    return _gallery_public(target, request, force_unlocked=bool(password))
 
 
 @app.delete("/v1/galleries/{gallery_id}")
@@ -2101,6 +2529,7 @@ def delete_gallery(gallery_id: str, request: Request) -> dict[str, Any]:
     _require_auth(request)
     if gallery_id == DEFAULT_GALLERY_ID:
         raise HTTPException(status_code=400, detail="默认画廊不能删除")
+    _require_gallery_access(request, gallery_id)
 
     history_path = _history_path()
     deleted_count = 0
@@ -2146,6 +2575,7 @@ def history_detail(history_id: str, request: Request) -> dict[str, Any]:
     _require_auth(request)
     for record in _load_history():
         if str(record.get("id")) == history_id:
+            _require_records_gallery_access(request, [record])
             return record
     raise HTTPException(status_code=404, detail="History item not found")
 
@@ -2153,6 +2583,7 @@ def history_detail(history_id: str, request: Request) -> dict[str, Any]:
 @app.delete("/v1/history/{history_id}")
 def delete_history(history_id: str, request: Request) -> dict[str, bool]:
     _require_auth(request)
+    _require_history_ids_access(request, [history_id])
     _delete_history_item(history_id)
     return {"ok": True}
 
@@ -2165,6 +2596,7 @@ async def delete_history_batch(request: Request) -> dict[str, int | bool]:
     if not isinstance(raw_ids, list):
         raise HTTPException(status_code=400, detail="ids must be a list")
     history_ids = [str(item) for item in raw_ids]
+    _require_history_ids_access(request, history_ids)
     deleted = _delete_history_items(history_ids)
     return {"ok": True, "deleted": deleted}
 
@@ -2182,6 +2614,8 @@ async def move_history_batch(request: Request) -> dict[str, Any]:
     history_ids = [str(item) for item in raw_ids if str(item).strip()]
     if not history_ids:
         raise HTTPException(status_code=400, detail="ids must not be empty")
+    _require_history_ids_access(request, history_ids)
+    _require_gallery_access(request, raw_gallery_id.strip())
     moved = _move_history_items(history_ids, raw_gallery_id.strip())
     _log_event(
         "history_moved",
@@ -2202,6 +2636,7 @@ async def trash_history_batch(request: Request) -> dict[str, Any]:
     history_ids = [str(item) for item in raw_ids if str(item).strip()]
     if not history_ids:
         raise HTTPException(status_code=400, detail="ids must not be empty")
+    _require_history_ids_access(request, history_ids)
     moved = _trash_history_items(history_ids)
     _log_event("history_trashed", count=moved, requested=len(history_ids))
     return {"ok": True, "trashed": moved}
@@ -2220,6 +2655,7 @@ async def reorder_history_batch(request: Request) -> dict[str, Any]:
     history_ids = [str(item) for item in raw_ids if str(item).strip()]
     if not history_ids:
         raise HTTPException(status_code=400, detail="ordered_ids must not be empty")
+    _require_gallery_access(request, raw_gallery_id.strip())
     updated = _reorder_history_items(raw_gallery_id.strip(), history_ids)
     _log_event(
         "history_reordered",
@@ -2233,7 +2669,7 @@ async def reorder_history_batch(request: Request) -> dict[str, Any]:
 @app.get("/v1/trash")
 def list_trash(request: Request) -> dict[str, Any]:
     _require_auth(request)
-    records = _load_trash()
+    records = _filter_accessible_trash_records(request, _load_trash())
     return {
         "items": [_trash_public(record) for record in records],
         "retention_days": settings.trash_retention_days,
@@ -2251,6 +2687,7 @@ async def restore_trash_batch(request: Request) -> dict[str, Any]:
     trash_ids = [str(item) for item in raw_ids if str(item).strip()]
     if not trash_ids:
         raise HTTPException(status_code=400, detail="ids must not be empty")
+    _require_trash_ids_access(request, trash_ids)
     restored = _restore_trash_items(trash_ids)
     _log_event("trash_restored", count=restored, requested=len(trash_ids))
     return {"ok": True, "restored": restored}
@@ -2266,6 +2703,7 @@ async def delete_trash_batch(request: Request) -> dict[str, Any]:
     trash_ids = [str(item) for item in raw_ids if str(item).strip()]
     if not trash_ids:
         raise HTTPException(status_code=400, detail="ids must not be empty")
+    _require_trash_ids_access(request, trash_ids)
     deleted = _permanently_delete_trash_items(trash_ids)
     _log_event("trash_permanently_deleted", count=deleted, requested=len(trash_ids))
     return {"ok": True, "deleted": deleted}
@@ -2274,7 +2712,10 @@ async def delete_trash_batch(request: Request) -> dict[str, Any]:
 @app.post("/v1/trash/empty")
 def empty_trash(request: Request) -> dict[str, Any]:
     _require_auth(request)
-    deleted = _empty_trash()
+    records = _filter_accessible_trash_records(request, _load_trash())
+    deleted = _permanently_delete_trash_items(
+        [str(record.get("id")) for record in records]
+    )
     _log_event("trash_emptied", count=deleted)
     return {"ok": True, "deleted": deleted}
 
@@ -2325,6 +2766,7 @@ async def download_history_batch(request: Request) -> FileResponse:
     if not isinstance(raw_ids, list):
         raise HTTPException(status_code=400, detail="ids must be a list")
     history_ids = [str(item) for item in raw_ids]
+    _require_history_ids_access(request, history_ids)
     zip_path = _build_history_zip(history_ids)
     return FileResponse(
         zip_path,
@@ -3788,6 +4230,7 @@ async def _run_generation_job(job_id: str) -> None:
 async def create_job(request: Request, generation: GenerateImageRequest) -> dict[str, Any]:
     _require_auth(request)
     payload = _payload_from_request(generation)
+    _require_gallery_access(request, str(payload.get("gallery_id") or DEFAULT_GALLERY_ID))
     job_id = uuid.uuid4().hex
     now = int(time.time())
     job = {
@@ -3837,6 +4280,7 @@ async def create_edit_job(
         response_format=response_format,
         extra=extra,
     )
+    _require_gallery_access(http_request, str(payload.get("gallery_id") or DEFAULT_GALLERY_ID))
     persisted_files: list[str] = []
     try:
         source_files = [
@@ -3879,7 +4323,18 @@ async def create_edit_job(
 @app.get("/v1/jobs")
 def list_jobs(request: Request) -> dict[str, list[dict[str, Any]]]:
     _require_auth(request)
-    return {"jobs": [_job_public(job) for job in _load_jobs()]}
+    jobs = [
+        job
+        for job in _load_jobs()
+        if _can_access_gallery(
+            request,
+            str(
+                (job.get("payload") if isinstance(job.get("payload"), dict) else {}).get("gallery_id")
+                or DEFAULT_GALLERY_ID
+            ),
+        )
+    ]
+    return {"jobs": [_job_public(job) for job in jobs]}
 
 
 @app.get("/v1/jobs/{job_id}")
@@ -3888,6 +4343,8 @@ def get_job(job_id: str, request: Request) -> dict[str, Any]:
     job = _get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
+    payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+    _require_gallery_access(request, str(payload.get("gallery_id") or DEFAULT_GALLERY_ID))
     return _job_public(job)
 
 
@@ -3897,6 +4354,8 @@ def cancel_job(job_id: str, request: Request) -> dict[str, Any]:
     job = _get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
+    payload = job.get("payload") if isinstance(job.get("payload"), dict) else {}
+    _require_gallery_access(request, str(payload.get("gallery_id") or DEFAULT_GALLERY_ID))
     if job.get("status") in {"succeeded", "failed", "cancelled"}:
         return _job_public(job)
 
@@ -3945,6 +4404,7 @@ async def edit_image(
         response_format=response_format,
         extra=extra,
     )
+    _require_gallery_access(http_request, str(payload.get("gallery_id") or DEFAULT_GALLERY_ID))
     return await _execute_edit(
         request_id=request_id,
         payload=payload,
@@ -3962,9 +4422,11 @@ async def generate_image(
     request_id = uuid.uuid4().hex
     started_at = time.monotonic()
     _require_auth(http_request)
+    payload = _payload_from_request(request)
+    _require_gallery_access(http_request, str(payload.get("gallery_id") or DEFAULT_GALLERY_ID))
     return await _execute_generation(
         request_id=request_id,
-        payload=_payload_from_request(request),
+        payload=payload,
         prompt=request.prompt,
         started_at=started_at,
         client_host=http_request.client.host if http_request.client else None,

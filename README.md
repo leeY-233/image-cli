@@ -13,6 +13,7 @@
 - 后台任务：任务运行中可以转入后台，继续提交新的生成或编辑任务；最多同时存在 10 个排队或运行中的 Job。
 - 本地取消：前端和 API 都支持取消本地 Job；如果请求已经发给上游，provider 仍可能继续完成。
 - 历史记录：生成历史和编辑历史写入同一个 `history.json`，通过 `operation` 字段区分，前端会根据当前模式自动切换展示。
+- 画廊密码：创建或编辑画廊时可设置密码；受保护画廊需要解锁后才能查看、生成、编辑、移动、下载或删除其中内容，解锁有效期为 7 天。
 - 历史操作：支持查看、打开原图、下载、批量下载 ZIP、批量删除；生成历史和编辑历史都可以一键进入再次编辑。
 - 历史元数据：记录图片文件大小、图片宽高规格、请求质量、实际质量、输出格式和状态。
 - 文件保护：历史超过上限清理旧记录时，如果旧图片仍被 Job 或其他历史引用，会保留本地文件避免详情失效。
@@ -270,6 +271,14 @@ outputs/
 
 批量下载的 ZIP 里会包含图片和对应的 `prompt.txt`。ZIP 文件会临时生成，响应结束后自动清理。
 
+## 画廊密码
+
+画廊配置保存在 `outputs/galleries.json`。如果设置了密码，后端只保存 PBKDF2 哈希，不保存明文密码；解锁状态通过签名 Cookie 保存 7 天，过期后需要重新输入。
+
+默认画廊 `default` 不允许设置密码，只有新建的非默认画廊可以加密。
+
+画廊密码依赖 `APP_SESSION_SECRET` 签名 Cookie。未配置 `APP_SESSION_SECRET` 时，不能创建或解锁受保护画廊。
+
 ## HTTP API
 
 如果开启了 `APP_PASSWORD` 和 `APP_SESSION_SECRET`，API 也需要先登录拿到 cookie：
@@ -467,6 +476,35 @@ curl -X POST http://127.0.0.1:8000/v1/history/download \
   -d '{"ids":["history_uuid_1","history_uuid_2"]}' \
   -o history-images.zip
 ```
+
+### 画廊和密码
+
+```bash
+curl -b cookies.txt http://127.0.0.1:8000/v1/galleries
+
+curl -X POST http://127.0.0.1:8000/v1/galleries \
+  -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{"name":"私密画廊","password":"gallery-password"}'
+
+curl -X POST http://127.0.0.1:8000/v1/galleries/GALLERY_ID/unlock \
+  -b cookies.txt \
+  -c cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{"password":"gallery-password"}'
+
+curl -X PATCH http://127.0.0.1:8000/v1/galleries/GALLERY_ID \
+  -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{"name":"新名称","password":"new-password"}'
+
+curl -X PATCH http://127.0.0.1:8000/v1/galleries/GALLERY_ID \
+  -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{"clear_password":true}'
+```
+
+受保护画廊未解锁时，相关历史、文件、Job 和移动/删除/下载接口会返回 `403 GalleryLocked`。
 
 ### 查看 provider 列表
 
