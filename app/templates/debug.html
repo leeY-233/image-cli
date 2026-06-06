@@ -165,6 +165,10 @@
         background: rgba(14, 165, 233, 0.08);
         color: #0284c7;
       }
+      .panel-icon.file {
+        background: rgba(16, 185, 129, 0.09);
+        color: #059669;
+      }
       .panel-icon.service {
         background: rgba(245, 158, 11, 0.1);
         color: #d97706;
@@ -354,6 +358,7 @@
       }
       .panel-icon.systemd,
       .panel-icon.docker,
+      .panel-icon.file,
       .panel-icon.journal,
       .panel-icon.app,
       .panel-icon.service {
@@ -407,6 +412,7 @@
       const iconSvg = {
         systemd: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>',
         docker: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12.5c-.6.3-1.2.5-2 .5h-1v1a5 5 0 0 1-5 5H8a6 6 0 0 1-6-6v-1h16.5"/><path d="M5 8h3v4H5z"/><path d="M8 8h3v4H8z"/><path d="M11 8h3v4h-3z"/><path d="M8 4h3v4H8z"/><path d="M11 4h3v4h-3z"/><path d="M14 8h3v4h-3z"/><path d="M20 10c0-1 .5-2 2-2"/></svg>',
+        file: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M8 13h8"/><path d="M8 17h6"/></svg>',
       };
 
       function escapeHtml(value) {
@@ -421,6 +427,7 @@
 
       function serviceSubtitle(service) {
         if (service.type === "docker") return `Docker container / ${service.target}`;
+        if (service.type === "file") return `Log file / ${service.target}`;
         return `systemd journal / ${service.target}`;
       }
 
@@ -508,7 +515,7 @@
         panels.innerHTML = `
           <div class="empty-state">
             <strong>${escapeHtml(message)}</strong>
-            <span>可以在 <a href="/admin">Admin Settings</a> 里启用最多 4 个 systemd 或 Docker 日志槽位。</span>
+            <span>可以在 <a href="/admin">Admin Settings</a> 里启用最多 4 个 systemd、Docker 或文件日志槽位。</span>
           </div>
         `;
       }

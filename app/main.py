@@ -111,6 +111,7 @@ class Settings(BaseModel):
 settings = Settings()
 settings.output_dir.mkdir(parents=True, exist_ok=True)
 settings.log_dir.mkdir(parents=True, exist_ok=True)
+APP_ROOT = Path(__file__).resolve().parent.parent
 
 app = FastAPI(title="Image CLI Web Service", version="0.1.0")
 HISTORY_LIMIT = settings.history_limit
@@ -138,9 +139,13 @@ TRASH_LIMIT = 1000
 DEBUG_LOG_SERVICE_SLOTS = 4
 DEBUG_LOG_TYPE_SYSTEMD = "systemd"
 DEBUG_LOG_TYPE_DOCKER = "docker"
-DEBUG_LOG_TYPES = {DEBUG_LOG_TYPE_SYSTEMD, DEBUG_LOG_TYPE_DOCKER}
+DEBUG_LOG_TYPE_FILE = "file"
+DEBUG_LOG_TYPES = {DEBUG_LOG_TYPE_SYSTEMD, DEBUG_LOG_TYPE_DOCKER, DEBUG_LOG_TYPE_FILE}
 DEBUG_LOG_SYSTEMD_TARGET_RE = re.compile(r"^[A-Za-z0-9_.@:+-]+$")
 DEBUG_LOG_DOCKER_TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+DEBUG_LOG_FILE_TAIL_LINES = 200
+DEBUG_LOG_FILE_POLL_SECONDS = 0.75
+DEBUG_LOG_FILE_MAX_PATH_LENGTH = 512
 SUPPORTED_EDIT_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp"}
 THUMBNAIL_MAX_EDGE = 1024
 THUMBNAIL_QUALITY = 92
@@ -801,19 +806,29 @@ def _debug_log_slot_id(slot: int) -> str:
     return f"log-{slot}"
 
 
-def _safe_debug_log_type(value: Any) -> Literal["systemd", "docker"]:
+def _safe_debug_log_type(value: Any) -> Literal["systemd", "docker", "file"]:
     text = str(value or "").strip().lower()
     if text in {"docker", "container", "docker_container"}:
         return DEBUG_LOG_TYPE_DOCKER
+    if text in {"file", "log_file", "local_file", "path"}:
+        return DEBUG_LOG_TYPE_FILE
     return DEBUG_LOG_TYPE_SYSTEMD
 
 
 def _debug_log_target_key(log_type: str) -> str:
-    return "container" if log_type == DEBUG_LOG_TYPE_DOCKER else "service"
+    if log_type == DEBUG_LOG_TYPE_DOCKER:
+        return "container"
+    if log_type == DEBUG_LOG_TYPE_FILE:
+        return "path"
+    return "service"
 
 
 def _debug_log_type_label(log_type: str) -> str:
-    return "Docker Container" if log_type == DEBUG_LOG_TYPE_DOCKER else "systemd"
+    if log_type == DEBUG_LOG_TYPE_DOCKER:
+        return "Docker Container"
+    if log_type == DEBUG_LOG_TYPE_FILE:
+        return "Log File"
+    return "systemd"
 
 
 def _bool_from_any(value: Any, default: bool = False) -> bool:
@@ -834,6 +849,8 @@ def _debug_log_target_valid(log_type: str, target: str) -> bool:
         return False
     if log_type == DEBUG_LOG_TYPE_DOCKER:
         return bool(DEBUG_LOG_DOCKER_TARGET_RE.fullmatch(target))
+    if log_type == DEBUG_LOG_TYPE_FILE:
+        return "\x00" not in target and len(target) <= DEBUG_LOG_FILE_MAX_PATH_LENGTH
     return bool(DEBUG_LOG_SYSTEMD_TARGET_RE.fullmatch(target))
 
 
@@ -883,6 +900,8 @@ def _normalize_debug_log_services(raw: Any = None) -> list[dict[str, Any]]:
         target = str(
             raw_item.get("target")
             or raw_item.get(_debug_log_target_key(log_type))
+            or raw_item.get("file")
+            or raw_item.get("file_path")
             or ""
         ).strip()
         name = str(raw_item.get("name") or raw_item.get("label") or "").strip()
@@ -996,17 +1015,121 @@ def _format_debug_line(line: str, source: str) -> str:
     if _starts_with_timestamp(line):
         return line
 
-    if source == "app":
-        try:
-            payload = json.loads(line)
-        except json.JSONDecodeError:
-            payload = None
-        if isinstance(payload, dict):
-            raw_ts = payload.get("ts")
-            if isinstance(raw_ts, (int, float)):
-                return f"{_debug_timestamp(raw_ts)} {line}"
+    try:
+        payload = json.loads(line)
+    except json.JSONDecodeError:
+        payload = None
+    if isinstance(payload, dict):
+        raw_ts = payload.get("ts")
+        if isinstance(raw_ts, (int, float)):
+            return f"{_debug_timestamp(raw_ts)} {line}"
 
     return f"{_debug_timestamp()} {line}"
+
+
+def _resolve_debug_log_file_path(target: str) -> Path:
+    try:
+        path = Path(target).expanduser()
+    except RuntimeError:
+        path = Path(target)
+    if not path.is_absolute():
+        path = APP_ROOT / path
+    return path
+
+
+def _tail_debug_log_file(path: Path) -> tuple[list[str], int]:
+    with path.open("rb") as handle:
+        handle.seek(0, os.SEEK_END)
+        file_size = handle.tell()
+        position = file_size
+        chunks: list[bytes] = []
+        newline_count = 0
+        while position > 0 and newline_count <= DEBUG_LOG_FILE_TAIL_LINES:
+            read_size = min(8192, position)
+            position -= read_size
+            handle.seek(position)
+            chunk = handle.read(read_size)
+            chunks.append(chunk)
+            newline_count += chunk.count(b"\n")
+    raw_lines = b"".join(reversed(chunks)).splitlines()[-DEBUG_LOG_FILE_TAIL_LINES:]
+    return [line.decode("utf-8", errors="replace") for line in raw_lines], file_size
+
+
+async def _stream_file_lines(target: str, source: str):
+    path = _resolve_debug_log_file_path(target)
+    try:
+        if not path.is_file():
+            yield _sse_payload(_format_debug_line(f"日志文件不存在：{path}", source))
+            yield _sse_event("close", {"reason": "file_not_found"})
+            return
+        stat = path.stat()
+        signature = (stat.st_dev, stat.st_ino)
+        lines, position = _tail_debug_log_file(path)
+    except PermissionError:
+        yield _sse_payload(_format_debug_line(f"没有权限读取日志文件：{path}", source))
+        yield _sse_event("close", {"reason": "file_permission_denied"})
+        return
+    except OSError as exc:
+        yield _sse_payload(
+            _format_debug_line(f"日志文件读取失败：{exc.__class__.__name__}: {exc}", source)
+        )
+        yield _sse_event("close", {"reason": "file_open_failed"})
+        return
+
+    for line in lines:
+        yield _sse_payload(_format_debug_line(line, source))
+
+    while True:
+        await asyncio.sleep(DEBUG_LOG_FILE_POLL_SECONDS)
+        try:
+            stat = path.stat()
+        except FileNotFoundError:
+            yield _sse_payload(_format_debug_line(f"日志文件已不存在：{path}", source))
+            yield _sse_event("close", {"reason": "file_removed"})
+            return
+        except PermissionError:
+            yield _sse_payload(_format_debug_line(f"没有权限读取日志文件：{path}", source))
+            yield _sse_event("close", {"reason": "file_permission_denied"})
+            return
+        except OSError as exc:
+            yield _sse_payload(
+                _format_debug_line(f"日志文件状态读取失败：{exc.__class__.__name__}: {exc}", source)
+            )
+            yield _sse_event("close", {"reason": "file_stat_failed"})
+            return
+
+        next_signature = (stat.st_dev, stat.st_ino)
+        if next_signature != signature or stat.st_size < position:
+            try:
+                lines, position = _tail_debug_log_file(path)
+                signature = next_signature
+            except OSError as exc:
+                yield _sse_payload(
+                    _format_debug_line(f"日志文件重新打开失败：{exc.__class__.__name__}: {exc}", source)
+                )
+                yield _sse_event("close", {"reason": "file_reopen_failed"})
+                return
+            for line in lines:
+                yield _sse_payload(_format_debug_line(line, source))
+            continue
+
+        if stat.st_size == position:
+            continue
+
+        try:
+            with path.open("rb") as handle:
+                handle.seek(position)
+                data = handle.read()
+                position = handle.tell()
+        except OSError as exc:
+            yield _sse_payload(
+                _format_debug_line(f"日志文件追加内容读取失败：{exc.__class__.__name__}: {exc}", source)
+            )
+            yield _sse_event("close", {"reason": "file_read_failed"})
+            return
+
+        for line in data.decode("utf-8", errors="replace").splitlines():
+            yield _sse_payload(_format_debug_line(line, source))
 
 
 async def _stream_command_lines(
@@ -1056,15 +1179,18 @@ async def _stream_command_lines(
                 await process.wait()
 
 
-def _debug_log_command(source: str) -> tuple[list[str], str]:
-    service = _get_debug_log_service(source)
+def _validate_debug_log_service(service: dict[str, Any]) -> tuple[str, str]:
     log_type = service["type"]
     target = str(service.get("target") or "").strip()
     if not service.get("enabled"):
         raise HTTPException(status_code=404, detail="Debug log slot is disabled")
     if not _debug_log_target_valid(log_type, target):
         raise HTTPException(status_code=400, detail="Debug log target is invalid")
+    return log_type, target
 
+
+def _debug_log_command(service: dict[str, Any]) -> tuple[list[str], str]:
+    log_type, target = _validate_debug_log_service(service)
     if log_type == DEBUG_LOG_TYPE_SYSTEMD:
         journalctl = shutil.which("journalctl")
         if not journalctl:
@@ -2795,9 +2921,15 @@ def restart_service(request: Request) -> dict[str, Any]:
 @app.get("/v1/debug/logs/{source}")
 async def debug_logs(source: str, request: Request) -> StreamingResponse:
     _require_auth(request)
-    command, unavailable_message = _debug_log_command(source)
+    service = _get_debug_log_service(source)
+    log_type, target = _validate_debug_log_service(service)
+    if log_type == DEBUG_LOG_TYPE_FILE:
+        stream = _stream_file_lines(target, source)
+    else:
+        command, unavailable_message = _debug_log_command(service)
+        stream = _stream_command_lines(command, unavailable_message, source)
     return StreamingResponse(
-        _stream_command_lines(command, unavailable_message, source),
+        stream,
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",

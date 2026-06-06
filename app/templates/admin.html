@@ -216,7 +216,8 @@
         transform: translateX(20px);
       }
       .target-systemd,
-      .target-docker {
+      .target-docker,
+      .target-file {
         display: grid;
         gap: 7px;
       }
@@ -443,7 +444,7 @@
         <div class="module-head">
           <div class="module-title">
             <strong>Debug Log Services</strong>
-            <div class="hint">最多 4 个日志槽位；systemd 手动输入服务名，Docker 从当前 <code>docker ps</code> 容器里选择。</div>
+            <div class="hint">最多 4 个日志槽位；systemd 手动输入服务名，Docker 从当前 <code>docker ps</code> 容器里选择，日志文件可填写绝对路径或相对项目目录的路径。</div>
           </div>
           <button type="button" id="reloadContainers">Refresh Docker</button>
         </div>
@@ -718,7 +719,7 @@
         const card = document.createElement("div");
         card.className = "log-service-card";
         card.dataset.index = String(index);
-        const currentType = service.type === "docker" ? "docker" : "systemd";
+        const currentType = service.type === "docker" ? "docker" : service.type === "file" ? "file" : "systemd";
         const currentTarget = service.target || "";
         const dockerOptions = [...dockerContainers];
         if (currentType === "docker" && currentTarget && !dockerOptions.some(container => container.name === currentTarget)) {
@@ -745,6 +746,7 @@
               <select name="type">
                 <option value="systemd" ${currentType === "systemd" ? "selected" : ""}>systemd</option>
                 <option value="docker" ${currentType === "docker" ? "selected" : ""}>Docker Container</option>
+                <option value="file" ${currentType === "file" ? "selected" : ""}>Log File</option>
               </select>
             </div>
             <div class="field wide target-systemd">
@@ -761,6 +763,11 @@
               </select>
               <input name="docker_manual" value="${currentType === "docker" ? escapeHtml(currentTarget) : ""}" placeholder="Manual container name if not listed" />
             </div>
+            <div class="field wide target-file">
+              <label>Log File Path</label>
+              <input name="file_target" value="${currentType === "file" ? escapeHtml(currentTarget) : ""}" placeholder="/var/log/image-cli/app.log" />
+              <div class="hint">Relative paths resolve from the project directory.</div>
+            </div>
           </div>
         `;
         const typeSelect = card.querySelector('[name="type"]');
@@ -770,8 +777,10 @@
         const nameInput = card.querySelector('[name="name"]');
         function syncTargetMode() {
           const isDocker = typeSelect.value === "docker";
-          card.querySelector(".target-systemd").hidden = isDocker;
+          const isFile = typeSelect.value === "file";
+          card.querySelector(".target-systemd").hidden = isDocker || isFile;
           card.querySelector(".target-docker").hidden = !isDocker;
+          card.querySelector(".target-file").hidden = !isFile;
         }
         typeSelect.addEventListener("change", syncTargetMode);
         nameInput.addEventListener("input", () => {
@@ -820,10 +829,11 @@
           const dockerManual = card.querySelector('[name="docker_manual"]').value.trim();
           const dockerSelect = card.querySelector('[name="docker_target"]').value.trim();
           const systemdTarget = card.querySelector('[name="systemd_target"]').value.trim();
+          const fileTarget = card.querySelector('[name="file_target"]').value.trim();
           return {
             name: card.querySelector('[name="name"]').value.trim() || `日志 ${index + 1}`,
             type,
-            target: type === "docker" ? (dockerManual || dockerSelect) : systemdTarget,
+            target: type === "docker" ? (dockerManual || dockerSelect) : type === "file" ? fileTarget : systemdTarget,
             enabled: card.querySelector('[name="enabled"]').checked,
           };
         });
