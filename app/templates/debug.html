@@ -117,11 +117,15 @@
       .panels {
         min-height: 0;
         display: grid;
-        grid-template-columns: 1fr 1fr;
-        grid-template-rows: repeat(2, minmax(0, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-auto-rows: minmax(0, 1fr);
         gap: 10px;
         padding: 10px 24px 14px;
         animation: fadeInUp 0.4s 0.06s cubic-bezier(0.16, 1, 0.3, 1) both;
+      }
+      .panels.empty {
+        display: grid;
+        place-items: center;
       }
 
       .panel {
@@ -219,11 +223,31 @@
         background: rgba(56, 140, 255, 0.05);
       }
       .log-line:empty::after { content: ' '; }
+      .empty-state {
+        width: min(520px, 100%);
+        display: grid;
+        gap: 10px;
+        padding: 22px;
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        background: var(--bg-card);
+        color: var(--text-secondary);
+        text-align: center;
+      }
+      .empty-state strong {
+        color: var(--text);
+        font-size: 16px;
+      }
+      .empty-state a {
+        color: var(--terminal-text);
+        font-weight: 800;
+        text-decoration: none;
+      }
 
       @media (max-width: 900px) {
         body { height: 100dvh; }
         .shell { height: 100dvh; }
-        .panels { grid-template-columns: 1fr; grid-template-rows: repeat(4, minmax(260px, 1fr)); padding: 8px 14px 10px; overflow: auto; }
+        .panels { grid-template-columns: 1fr; grid-auto-rows: minmax(260px, 1fr); padding: 8px 14px 10px; overflow: auto; }
         header { padding: 10px 14px; flex-wrap: wrap; gap: 8px; }
         .hint { display: none; }
       }
@@ -328,9 +352,10 @@
       .hint {
         color: var(--text-muted);
       }
+      .panel-icon.systemd,
+      .panel-icon.docker,
       .panel-icon.journal,
       .panel-icon.app,
-      .panel-icon.docker,
       .panel-icon.service {
         background: var(--accent-subtle);
         color: #c4b5fd;
@@ -375,86 +400,59 @@
           </a>
         </div>
       </header>
-      <div class="panels">
-        <section class="panel">
-          <div class="panel-head">
-            <div class="panel-head-left">
-              <div class="panel-icon journal">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>
-              </div>
-              <div>
-                <div class="panel-title">systemd / journalctl</div>
-                <div class="panel-subtitle">系统服务日志流</div>
-              </div>
-            </div>
-            <span class="status-pill connecting" id="journalState">
-              <span class="status-dot"></span>
-              connecting
-            </span>
-          </div>
-          <div class="log-view" id="journalLog"></div>
-        </section>
-        <section class="panel">
-          <div class="panel-head">
-            <div class="panel-head-left">
-              <div class="panel-icon app">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><path d="M16 13H8"/><path d="M16 17H8"/><path d="M10 9H8"/></svg>
-              </div>
-              <div>
-                <div class="panel-title">app.log</div>
-                <div class="panel-subtitle">应用运行日志</div>
-              </div>
-            </div>
-            <span class="status-pill connecting" id="appState">
-              <span class="status-dot"></span>
-              connecting
-            </span>
-          </div>
-          <div class="log-view" id="appLog"></div>
-        </section>
-        <section class="panel">
-          <div class="panel-head">
-            <div class="panel-head-left">
-              <div class="panel-icon docker">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12.5c-.6.3-1.2.5-2 .5h-1v1a5 5 0 0 1-5 5H8a6 6 0 0 1-6-6v-1h16.5"/><path d="M5 8h3v4H5z"/><path d="M8 8h3v4H8z"/><path d="M11 8h3v4h-3z"/><path d="M8 4h3v4H8z"/><path d="M11 4h3v4h-3z"/><path d="M14 8h3v4h-3z"/><path d="M20 10c0-1 .5-2 2-2"/></svg>
-              </div>
-              <div>
-                <div class="panel-title">docker / chatgpt2api</div>
-                <div class="panel-subtitle">chatgpt2api 容器日志流</div>
-              </div>
-            </div>
-            <span class="status-pill connecting" id="chatgpt2apiState">
-              <span class="status-dot"></span>
-              connecting
-            </span>
-          </div>
-          <div class="log-view" id="chatgpt2apiLog"></div>
-        </section>
-        <section class="panel">
-          <div class="panel-head">
-            <div class="panel-head-left">
-              <div class="panel-icon service">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M8 7h8"/><path d="M8 11h8"/><path d="M8 15h5"/></svg>
-              </div>
-              <div>
-                <div class="panel-title">cliproxyapi.service</div>
-                <div class="panel-subtitle">systemd journal 日志流</div>
-              </div>
-            </div>
-            <span class="status-pill connecting" id="cliproxyapiState">
-              <span class="status-dot"></span>
-              connecting
-            </span>
-          </div>
-          <div class="log-view" id="cliproxyapiLog"></div>
-        </section>
-      </div>
+      <div class="panels" id="panels"></div>
     </div>
     <script>
-      function attachLog(source, logId, stateId) {
-        const log = document.querySelector(`#${logId}`);
-        const state = document.querySelector(`#${stateId}`);
-        const events = new EventSource(`/v1/debug/logs/${source}`);
+      const panels = document.querySelector("#panels");
+      const iconSvg = {
+        systemd: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8"/><path d="M12 17v4"/></svg>',
+        docker: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12.5c-.6.3-1.2.5-2 .5h-1v1a5 5 0 0 1-5 5H8a6 6 0 0 1-6-6v-1h16.5"/><path d="M5 8h3v4H5z"/><path d="M8 8h3v4H8z"/><path d="M11 8h3v4h-3z"/><path d="M8 4h3v4H8z"/><path d="M11 4h3v4h-3z"/><path d="M14 8h3v4h-3z"/><path d="M20 10c0-1 .5-2 2-2"/></svg>',
+      };
+
+      function escapeHtml(value) {
+        return String(value).replace(/[&<>"']/g, char => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        }[char]));
+      }
+
+      function serviceSubtitle(service) {
+        if (service.type === "docker") return `Docker container / ${service.target}`;
+        return `systemd journal / ${service.target}`;
+      }
+
+      function setStatus(state, text, cls) {
+        state.className = "status-pill " + cls;
+        state.innerHTML = '<span class="status-dot"></span>' + text;
+      }
+
+      function createPanel(service) {
+        const panel = document.createElement("section");
+        panel.className = "panel";
+        panel.innerHTML = `
+          <div class="panel-head">
+            <div class="panel-head-left">
+              <div class="panel-icon ${escapeHtml(service.type)}">${iconSvg[service.type] || iconSvg.systemd}</div>
+              <div>
+                <div class="panel-title">${escapeHtml(service.name || service.target || service.id)}</div>
+                <div class="panel-subtitle">${escapeHtml(serviceSubtitle(service))}</div>
+              </div>
+            </div>
+            <span class="status-pill connecting">
+              <span class="status-dot"></span>
+              connecting
+            </span>
+          </div>
+          <div class="log-view"></div>
+        `;
+        return panel;
+      }
+
+      function attachLog(service, log, state) {
+        const events = new EventSource(`/v1/debug/logs/${encodeURIComponent(service.id)}`);
         const maxLines = 200;
         const pending = [];
         let scheduled = false;
@@ -484,29 +482,55 @@
           }
         }
 
-        function setStatus(text, cls) {
-          state.className = 'status-pill ' + cls;
-          state.innerHTML = '<span class="status-dot"></span>' + text;
-        }
-
-        events.onopen = () => setStatus('live', 'live');
+        events.onopen = () => setStatus(state, "live", "live");
         events.onmessage = (event) => {
           enqueue(JSON.parse(event.data));
         };
         events.addEventListener('close', () => {
-          setStatus('closed', 'closed');
+          setStatus(state, "closed", "closed");
           events.close();
         });
         events.onerror = () => {
-          setStatus('reconnecting', 'reconnecting');
+          setStatus(state, "reconnecting", "reconnecting");
         };
         window.addEventListener('beforeunload', () => events.close());
       }
 
-      attachLog('journal', 'journalLog', 'journalState');
-      attachLog('app', 'appLog', 'appState');
-      attachLog('chatgpt2api', 'chatgpt2apiLog', 'chatgpt2apiState');
-      attachLog('cliproxyapi', 'cliproxyapiLog', 'cliproxyapiState');
+      async function loadLogServices() {
+        const res = await fetch("/v1/debug/log-services");
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+        return data.services || [];
+      }
+
+      function renderEmptyState(message) {
+        panels.classList.add("empty");
+        panels.innerHTML = `
+          <div class="empty-state">
+            <strong>${escapeHtml(message)}</strong>
+            <span>可以在 <a href="/admin">Admin Settings</a> 里启用最多 4 个 systemd 或 Docker 日志槽位。</span>
+          </div>
+        `;
+      }
+
+      loadLogServices()
+        .then(services => {
+          if (!services.length) {
+            renderEmptyState("当前没有启用的日志服务");
+            return;
+          }
+          panels.classList.remove("empty");
+          for (const service of services) {
+            const panel = createPanel(service);
+            panels.append(panel);
+            attachLog(
+              service,
+              panel.querySelector(".log-view"),
+              panel.querySelector(".status-pill")
+            );
+          }
+        })
+        .catch(error => renderEmptyState(error.message));
     </script>
   </body>
 </html>

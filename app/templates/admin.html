@@ -122,7 +122,34 @@
         line-height: 1.5;
       }
       .provider-list { display: grid; gap: 12px; }
+      .module-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding-top: 6px;
+      }
+      .module-title {
+        display: grid;
+        gap: 4px;
+      }
+      .module-title strong {
+        font-size: 15px;
+      }
+      .debug-log-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
       .provider-card {
+        display: grid;
+        gap: 12px;
+        padding: 14px;
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.48);
+      }
+      .log-service-card {
         display: grid;
         gap: 12px;
         padding: 14px;
@@ -136,7 +163,75 @@
         justify-content: space-between;
         gap: 10px;
       }
+      .slot-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 28px;
+        height: 28px;
+        padding: 0 9px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        font: 800 12px var(--mono);
+      }
       .provider-title { font-weight: 900; }
+      .switch {
+        position: relative;
+        display: inline-flex;
+        width: 48px;
+        height: 28px;
+      }
+      .switch input {
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+      }
+      .switch span {
+        width: 100%;
+        height: 100%;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: rgba(255,255,255,0.12);
+        cursor: pointer;
+        transition: background 0.18s, border-color 0.18s;
+      }
+      .switch span::after {
+        content: "";
+        position: absolute;
+        top: 4px;
+        left: 4px;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: #fff;
+        box-shadow: 0 5px 12px rgba(0,0,0,0.22);
+        transition: transform 0.18s;
+      }
+      .switch input:checked + span {
+        border-color: transparent;
+        background: var(--accent);
+      }
+      .switch input:checked + span::after {
+        transform: translateX(20px);
+      }
+      .target-systemd,
+      .target-docker {
+        display: grid;
+        gap: 7px;
+      }
+      .target-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 8px;
+        align-items: end;
+      }
+      .model-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: end;
+      }
       textarea {
         width: 100%;
         min-height: 74px;
@@ -155,7 +250,10 @@
       }
       [hidden] { display: none !important; }
       @media (max-width: 760px) {
-        .grid { grid-template-columns: 1fr; }
+        .grid,
+        .debug-log-list,
+        .target-row,
+        .model-row { grid-template-columns: 1fr; }
         .top, .toolbar { align-items: flex-start; flex-direction: column; }
         .actions { justify-content: flex-start; }
       }
@@ -283,9 +381,19 @@
         border-color: rgba(251, 191, 36, 0.22);
         background: rgba(251, 191, 36, 0.08);
       }
-      .provider-card {
+      .provider-card,
+      .log-service-card {
         border-color: var(--line);
         background: rgba(255,255,255,0.045);
+      }
+      .slot-badge {
+        background: rgba(255,255,255,0.04);
+      }
+      .switch span {
+        background: rgba(255,255,255,0.1);
+      }
+      .switch span::after {
+        background: #fafafa;
       }
       code {
         color: #c4b5fd;
@@ -327,11 +435,20 @@
             <button class="danger" type="button" id="restartService">Restart Service</button>
           </div>
         </div>
-        <div class="notice">保存配置只会写入 .env；大多数配置需要点击 Restart Service 后才会在后端生效。直接用命令行运行 uvicorn 时，重启按钮会提示手动重启。</div>
+        <div class="notice">Provider 和 Debug 日志配置保存后会立即在当前后端生效；其它环境配置通常需要点击 Restart Service 后生效。直接用命令行运行 uvicorn 时，重启按钮会提示手动重启。</div>
         <div class="provider-list" id="providerList"></div>
         <div class="actions" style="justify-content:flex-start;">
           <button type="button" id="addProvider">Add Provider</button>
         </div>
+        <div class="module-head">
+          <div class="module-title">
+            <strong>Debug Log Services</strong>
+            <div class="hint">最多 4 个日志槽位；systemd 手动输入服务名，Docker 从当前 <code>docker ps</code> 容器里选择。</div>
+          </div>
+          <button type="button" id="reloadContainers">Refresh Docker</button>
+        </div>
+        <div class="debug-log-list" id="debugLogList"></div>
+        <div class="hint" id="dockerStatus"></div>
         <form class="grid" id="configForm"></form>
         <div class="status" id="status"></div>
       </section>
@@ -370,8 +487,14 @@
       const reloadConfig = document.querySelector("#reloadConfig");
       const saveConfig = document.querySelector("#saveConfig");
       const restartService = document.querySelector("#restartService");
+      const debugLogList = document.querySelector("#debugLogList");
+      const reloadContainers = document.querySelector("#reloadContainers");
+      const dockerStatus = document.querySelector("#dockerStatus");
       let adminPassword = sessionStorage.getItem("imageCliAdminPassword") || "";
       let providers = [];
+      let debugLogServices = [];
+      let dockerContainers = [];
+      let dockerListError = "";
 
       function setStatus(message, kind = "") {
         statusEl.textContent = message;
@@ -409,10 +532,100 @@
         if (def.hint) wrap.append(Object.assign(document.createElement("div"), { className: "hint", textContent: def.hint }));
         return wrap;
       }
+      function providerGenerateMode(provider) {
+        if (provider.generate_mode === "completions") return "completions";
+        if (provider.api_type === "chat_completions") return "completions";
+        return "generate";
+      }
+      function providerEditMode(provider) {
+        if (provider.edit_mode === "completions") return "completions";
+        if (provider.api_type === "chat_completions") return "completions";
+        return "edit";
+      }
+      function providerApiTypeFromModes(generateMode, editMode) {
+        return generateMode === "completions" && editMode === "completions" ? "chat_completions" : "images";
+      }
+      function populateModelSelect(select, models = [], selected = select.value) {
+        const chosen = String(selected || "").trim();
+        const seen = new Set([""]);
+        const options = [{ value: "", label: "Use IMAGE_MODEL" }];
+        if (chosen) {
+          seen.add(chosen);
+          options.push({ value: chosen, label: chosen });
+        }
+        for (const model of models) {
+          const value = String(model || "").trim();
+          if (!value || seen.has(value)) continue;
+          seen.add(value);
+          options.push({ value, label: value });
+        }
+        select.replaceChildren(...options.map(item => {
+          const option = document.createElement("option");
+          option.value = item.value;
+          option.textContent = item.label;
+          if (item.value === chosen) option.selected = true;
+          return option;
+        }));
+      }
+      function providerModelOptionsHtml(model) {
+        const selected = String(model || "").trim();
+        return `
+          <option value="" ${selected ? "" : "selected"}>Use IMAGE_MODEL</option>
+          ${selected ? `<option value="${escapeHtml(selected)}" selected>${escapeHtml(selected)}</option>` : ""}
+        `;
+      }
+      function errorDetailMessage(detail) {
+        if (typeof detail === "string") return detail;
+        if (detail?.error?.message) return detail.error.message;
+        if (detail?.message) return detail.message;
+        if (detail) return JSON.stringify(detail);
+        return "Request failed";
+      }
+      async function detectProviderModels(card, clickedButton) {
+        const buttons = [...card.querySelectorAll("[data-provider-models]")];
+        const selects = [...card.querySelectorAll("[data-provider-model-select]")];
+        const status = card.querySelector(".model-status");
+        const currentModels = new Map(selects.map(select => [select.name, select.value]));
+        for (const button of buttons) button.disabled = true;
+        if (clickedButton) clickedButton.textContent = "Detecting...";
+        status.textContent = "Detecting /models...";
+        status.className = "hint model-status";
+        try {
+          const res = await fetch("/v1/admin/provider-models", {
+            method: "POST",
+            headers: adminHeaders(),
+            body: JSON.stringify({
+              id: card.querySelector('[name="id"]').value,
+              base_url: card.querySelector('[name="base_url"]').value,
+              api_key: card.querySelector('[name="api_key"]').value,
+            }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(errorDetailMessage(data.detail) || `HTTP ${res.status}`);
+          for (const select of selects) {
+            populateModelSelect(select, data.models || [], currentModels.get(select.name) || "");
+          }
+          status.textContent = data.model_count
+            ? `Loaded ${data.model_count} model(s) from /models for generate and edit.`
+            : "No models returned. Current selection was kept.";
+        } catch (error) {
+          for (const select of selects) {
+            populateModelSelect(select, [], currentModels.get(select.name) || "");
+          }
+          status.textContent = error.message;
+        } finally {
+          for (const button of buttons) {
+            button.disabled = false;
+            button.textContent = "Detect Models";
+          }
+        }
+      }
       function providerNode(provider, index) {
         const card = document.createElement("div");
         card.className = "provider-card";
         card.dataset.index = String(index);
+        const generateMode = providerGenerateMode(provider);
+        const editMode = providerEditMode(provider);
         card.innerHTML = `
           <div class="provider-head">
             <div class="provider-title">Provider ${index + 1}</div>
@@ -428,19 +641,41 @@
               <input name="name" value="${escapeHtml(provider.name || "")}" placeholder="Display name" />
             </div>
             <div class="field">
-              <label>API Type</label>
-              <select name="api_type">
-                <option value="images" ${(provider.api_type || "images") === "images" ? "selected" : ""}>Images API</option>
-                <option value="chat_completions" ${provider.api_type === "chat_completions" ? "selected" : ""}>Chat Completions</option>
+              <label>Generate Mode</label>
+              <select name="generate_mode">
+                <option value="generate" ${generateMode === "generate" ? "selected" : ""}>Generate API</option>
+                <option value="completions" ${generateMode === "completions" ? "selected" : ""}>Completions</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Edit Mode</label>
+              <select name="edit_mode">
+                <option value="edit" ${editMode === "edit" ? "selected" : ""}>Edit API</option>
+                <option value="completions" ${editMode === "completions" ? "selected" : ""}>Completions</option>
               </select>
             </div>
             <div class="field wide">
               <label>Base URL</label>
               <input name="base_url" value="${escapeHtml(provider.base_url || "")}" placeholder="https://example.com/v1" />
             </div>
+            <div class="field">
+              <label>Generate Model</label>
+              <div class="model-row">
+                <select name="generate_model" data-provider-model-select>${providerModelOptionsHtml(provider.generate_model || provider.model)}</select>
+                <button type="button" data-provider-models="${index}">Detect Models</button>
+              </div>
+              <div class="hint">Leave blank to use IMAGE_MODEL for generate.</div>
+            </div>
+            <div class="field">
+              <label>Edit Model</label>
+              <div class="model-row">
+                <select name="edit_model" data-provider-model-select>${providerModelOptionsHtml(provider.edit_model || provider.model)}</select>
+                <button type="button" data-provider-models="${index}">Detect Models</button>
+              </div>
+              <div class="hint">Leave blank to use IMAGE_MODEL for edit.</div>
+            </div>
             <div class="field wide">
-              <label>Model Override</label>
-              <input name="model" value="${escapeHtml(provider.model || "")}" placeholder="Optional. Leave blank to use IMAGE_MODEL." />
+              <div class="hint model-status">Use Detect Models to load provider /models into both model dropdowns.</div>
             </div>
             <div class="field wide">
               <label>API Key</label>
@@ -456,6 +691,9 @@
           providers.splice(index, 1);
           renderProviders();
         });
+        card.querySelectorAll(`[data-provider-models="${index}"]`).forEach(button => {
+          button.addEventListener("click", () => detectProviderModels(card, button));
+        });
         return card;
       }
       function escapeHtml(value) {
@@ -470,16 +708,140 @@
       function renderProviders() {
         providerList.replaceChildren(...providers.map((provider, index) => providerNode(provider, index)));
       }
+      function dockerOptionLabel(container) {
+        const parts = [container.name || container.id || ""];
+        if (container.image) parts.push(container.image);
+        if (container.status) parts.push(container.status);
+        return parts.filter(Boolean).join(" · ");
+      }
+      function logServiceNode(service, index) {
+        const card = document.createElement("div");
+        card.className = "log-service-card";
+        card.dataset.index = String(index);
+        const currentType = service.type === "docker" ? "docker" : "systemd";
+        const currentTarget = service.target || "";
+        const dockerOptions = [...dockerContainers];
+        if (currentType === "docker" && currentTarget && !dockerOptions.some(container => container.name === currentTarget)) {
+          dockerOptions.unshift({ id: currentTarget, name: currentTarget, image: "configured", status: "" });
+        }
+        card.innerHTML = `
+          <div class="provider-head">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span class="slot-badge">LOG ${index + 1}</span>
+              <div class="provider-title">${escapeHtml(service.name || `日志 ${index + 1}`)}</div>
+            </div>
+            <label class="switch" title="Enable this debug log slot">
+              <input name="enabled" type="checkbox" ${service.enabled ? "checked" : ""} />
+              <span></span>
+            </label>
+          </div>
+          <div class="grid">
+            <div class="field">
+              <label>Display Name</label>
+              <input name="name" value="${escapeHtml(service.name || "")}" placeholder="日志 ${index + 1}" />
+            </div>
+            <div class="field">
+              <label>Log Type</label>
+              <select name="type">
+                <option value="systemd" ${currentType === "systemd" ? "selected" : ""}>systemd</option>
+                <option value="docker" ${currentType === "docker" ? "selected" : ""}>Docker Container</option>
+              </select>
+            </div>
+            <div class="field wide target-systemd">
+              <label>Systemd Service Name</label>
+              <input name="systemd_target" value="${currentType === "systemd" ? escapeHtml(currentTarget) : ""}" placeholder="example.service" />
+            </div>
+            <div class="field wide target-docker">
+              <label>Docker Container</label>
+              <select name="docker_target">
+                <option value="">Select a running container</option>
+                ${dockerOptions.map(container => `
+                  <option value="${escapeHtml(container.name)}" ${currentType === "docker" && container.name === currentTarget ? "selected" : ""}>${escapeHtml(dockerOptionLabel(container))}</option>
+                `).join("")}
+              </select>
+              <input name="docker_manual" value="${currentType === "docker" ? escapeHtml(currentTarget) : ""}" placeholder="Manual container name if not listed" />
+            </div>
+          </div>
+        `;
+        const typeSelect = card.querySelector('[name="type"]');
+        const dockerSelect = card.querySelector('[name="docker_target"]');
+        const dockerManual = card.querySelector('[name="docker_manual"]');
+        const title = card.querySelector(".provider-title");
+        const nameInput = card.querySelector('[name="name"]');
+        function syncTargetMode() {
+          const isDocker = typeSelect.value === "docker";
+          card.querySelector(".target-systemd").hidden = isDocker;
+          card.querySelector(".target-docker").hidden = !isDocker;
+        }
+        typeSelect.addEventListener("change", syncTargetMode);
+        nameInput.addEventListener("input", () => {
+          title.textContent = nameInput.value || `日志 ${index + 1}`;
+        });
+        dockerSelect.addEventListener("change", () => {
+          if (dockerSelect.value) dockerManual.value = dockerSelect.value;
+        });
+        syncTargetMode();
+        return card;
+      }
+      function renderDebugLogServices() {
+        debugLogList.replaceChildren(...debugLogServices.map((service, index) => logServiceNode(service, index)));
+        if (dockerListError) {
+          dockerStatus.textContent = dockerListError;
+        } else {
+          dockerStatus.textContent = dockerContainers.length
+            ? `Loaded ${dockerContainers.length} running Docker container(s).`
+            : "No running Docker containers found.";
+        }
+      }
       function collectProviders() {
-        return [...providerList.querySelectorAll(".provider-card")].map(card => ({
-          id: card.querySelector('[name="id"]').value,
-          name: card.querySelector('[name="name"]').value,
-          api_type: card.querySelector('[name="api_type"]').value,
-          base_url: card.querySelector('[name="base_url"]').value,
-          model: card.querySelector('[name="model"]').value,
-          api_key: card.querySelector('[name="api_key"]').value,
-          note: card.querySelector('[name="note"]').value,
-        }));
+        return [...providerList.querySelectorAll(".provider-card")].map(card => {
+          const generateMode = card.querySelector('[name="generate_mode"]').value;
+          const editMode = card.querySelector('[name="edit_mode"]').value;
+          return {
+            id: card.querySelector('[name="id"]').value,
+            name: card.querySelector('[name="name"]').value,
+            api_type: providerApiTypeFromModes(generateMode, editMode),
+            generate_mode: generateMode,
+            edit_mode: editMode,
+            base_url: card.querySelector('[name="base_url"]').value,
+            model: card.querySelector('[name="generate_model"]').value === card.querySelector('[name="edit_model"]').value
+              ? card.querySelector('[name="generate_model"]').value
+              : "",
+            generate_model: card.querySelector('[name="generate_model"]').value,
+            edit_model: card.querySelector('[name="edit_model"]').value,
+            api_key: card.querySelector('[name="api_key"]').value,
+            note: card.querySelector('[name="note"]').value,
+          };
+        });
+      }
+      function collectDebugLogServices() {
+        return [...debugLogList.querySelectorAll(".log-service-card")].map((card, index) => {
+          const type = card.querySelector('[name="type"]').value;
+          const dockerManual = card.querySelector('[name="docker_manual"]').value.trim();
+          const dockerSelect = card.querySelector('[name="docker_target"]').value.trim();
+          const systemdTarget = card.querySelector('[name="systemd_target"]').value.trim();
+          return {
+            name: card.querySelector('[name="name"]').value.trim() || `日志 ${index + 1}`,
+            type,
+            target: type === "docker" ? (dockerManual || dockerSelect) : systemdTarget,
+            enabled: card.querySelector('[name="enabled"]').checked,
+          };
+        });
+      }
+      async function loadDockerContainers() {
+        reloadContainers.disabled = true;
+        try {
+          const res = await fetch("/v1/admin/docker-containers", { headers: { "X-Admin-Password": adminPassword } });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+          dockerContainers = data.containers || [];
+          dockerListError = data.error || "";
+        } catch (error) {
+          dockerContainers = [];
+          dockerListError = error.message;
+        } finally {
+          reloadContainers.disabled = false;
+        }
       }
       async function loadConfig() {
         setStatus("Loading...");
@@ -488,12 +850,27 @@
         if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
         envPath.textContent = data.env_file || ".env";
         providers = data.providers || [];
+        debugLogServices = data.debug_log_services || [];
+        await loadDockerContainers();
         renderProviders();
+        renderDebugLogServices();
         configForm.replaceChildren(...fields.map(def => fieldNode(def, data.config?.[def.key] || {})));
         setStatus("Loaded", "ok");
       }
       addProvider.addEventListener("click", () => {
-        providers.push({ id: `provider-${providers.length + 1}`, name: `Provider ${providers.length + 1}`, api_type: "images", base_url: "", note: "", api_key_configured: false });
+        providers.push({
+          id: `provider-${providers.length + 1}`,
+          name: `Provider ${providers.length + 1}`,
+          api_type: "images",
+          generate_mode: "generate",
+          edit_mode: "edit",
+          base_url: "",
+          model: "",
+          generate_model: "",
+          edit_model: "",
+          note: "",
+          api_key_configured: false,
+        });
         renderProviders();
       });
       function collectConfig() {
@@ -523,18 +900,27 @@
       reloadConfig.addEventListener("click", async () => {
         try { await loadConfig(); } catch (error) { setStatus(error.message, "error"); }
       });
+      reloadContainers.addEventListener("click", async () => {
+        debugLogServices = collectDebugLogServices();
+        await loadDockerContainers();
+        renderDebugLogServices();
+      });
       saveConfig.addEventListener("click", async () => {
         saveConfig.disabled = true;
         try {
           const res = await fetch("/v1/admin/config", {
             method: "POST",
             headers: adminHeaders(),
-            body: JSON.stringify({ config: collectConfig(), providers: collectProviders() }),
+            body: JSON.stringify({
+              config: collectConfig(),
+              providers: collectProviders(),
+              debug_log_services: collectDebugLogServices(),
+            }),
           });
           const data = await res.json().catch(() => ({}));
           if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
           await loadConfig();
-          setStatus(`Saved ${data.updated?.length || 0} setting(s). Restart service to apply.`, "ok");
+          setStatus(`Saved ${data.updated?.length || 0} setting(s). Provider/debug changes are live; restart only for other env settings.`, "ok");
         } catch (error) {
           setStatus(error.message, "error");
         } finally {

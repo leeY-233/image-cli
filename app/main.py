@@ -96,6 +96,7 @@ class Settings(BaseModel):
         default_factory=lambda: os.getenv("APP_SESSION_SECRET", "")
     )
     systemd_unit: str = Field(default_factory=lambda: _env_str("SYSTEMD_UNIT", "image-cli"))
+    debug_log_services: str = Field(default_factory=lambda: os.getenv("DEBUG_LOG_SERVICES", ""))
     session_max_age_seconds: int = 60 * 60 * 24 * 7
 
     @property
@@ -134,23 +135,73 @@ GALLERY_PASSWORD_HASH_ITERATIONS = 260_000
 TRASH_MIN_RETENTION_DAYS = 1
 TRASH_MAX_RETENTION_DAYS = 365
 TRASH_LIMIT = 1000
+DEBUG_LOG_SERVICE_SLOTS = 4
+DEBUG_LOG_TYPE_SYSTEMD = "systemd"
+DEBUG_LOG_TYPE_DOCKER = "docker"
+DEBUG_LOG_TYPES = {DEBUG_LOG_TYPE_SYSTEMD, DEBUG_LOG_TYPE_DOCKER}
+DEBUG_LOG_SYSTEMD_TARGET_RE = re.compile(r"^[A-Za-z0-9_.@:+-]+$")
+DEBUG_LOG_DOCKER_TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 SUPPORTED_EDIT_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp"}
 THUMBNAIL_MAX_EDGE = 1024
 THUMBNAIL_QUALITY = 92
 PROVIDER_API_IMAGES = "images"
 PROVIDER_API_CHAT_COMPLETIONS = "chat_completions"
+PROVIDER_GENERATE_MODE_GENERATE = "generate"
+PROVIDER_GENERATE_MODE_COMPLETIONS = "completions"
+PROVIDER_EDIT_MODE_EDIT = "edit"
+PROVIDER_EDIT_MODE_COMPLETIONS = "completions"
 PROVIDER_API_TYPE_ALIASES = {
     "": PROVIDER_API_IMAGES,
     "image": PROVIDER_API_IMAGES,
     "images": PROVIDER_API_IMAGES,
+    "generate": PROVIDER_API_IMAGES,
+    "generation": PROVIDER_API_IMAGES,
+    "edit": PROVIDER_API_IMAGES,
     "image_api": PROVIDER_API_IMAGES,
     "images_api": PROVIDER_API_IMAGES,
     "chat": PROVIDER_API_CHAT_COMPLETIONS,
+    "completion": PROVIDER_API_CHAT_COMPLETIONS,
+    "completions": PROVIDER_API_CHAT_COMPLETIONS,
     "chat_completion": PROVIDER_API_CHAT_COMPLETIONS,
     "chat_completions": PROVIDER_API_CHAT_COMPLETIONS,
     "chat-completions": PROVIDER_API_CHAT_COMPLETIONS,
     "chat/completions": PROVIDER_API_CHAT_COMPLETIONS,
     "v1_chat_completions": PROVIDER_API_CHAT_COMPLETIONS,
+}
+PROVIDER_GENERATE_MODE_ALIASES = {
+    "": PROVIDER_GENERATE_MODE_GENERATE,
+    "image": PROVIDER_GENERATE_MODE_GENERATE,
+    "images": PROVIDER_GENERATE_MODE_GENERATE,
+    "generate": PROVIDER_GENERATE_MODE_GENERATE,
+    "generation": PROVIDER_GENERATE_MODE_GENERATE,
+    "generations": PROVIDER_GENERATE_MODE_GENERATE,
+    "image_generation": PROVIDER_GENERATE_MODE_GENERATE,
+    "images_generations": PROVIDER_GENERATE_MODE_GENERATE,
+    "images/generations": PROVIDER_GENERATE_MODE_GENERATE,
+    "chat": PROVIDER_GENERATE_MODE_COMPLETIONS,
+    "completion": PROVIDER_GENERATE_MODE_COMPLETIONS,
+    "completions": PROVIDER_GENERATE_MODE_COMPLETIONS,
+    "chat_completion": PROVIDER_GENERATE_MODE_COMPLETIONS,
+    "chat_completions": PROVIDER_GENERATE_MODE_COMPLETIONS,
+    "chat-completions": PROVIDER_GENERATE_MODE_COMPLETIONS,
+    "chat/completions": PROVIDER_GENERATE_MODE_COMPLETIONS,
+}
+PROVIDER_EDIT_MODE_ALIASES = {
+    "": PROVIDER_EDIT_MODE_EDIT,
+    "image": PROVIDER_EDIT_MODE_EDIT,
+    "images": PROVIDER_EDIT_MODE_EDIT,
+    "edit": PROVIDER_EDIT_MODE_EDIT,
+    "edits": PROVIDER_EDIT_MODE_EDIT,
+    "image_edit": PROVIDER_EDIT_MODE_EDIT,
+    "images_edits": PROVIDER_EDIT_MODE_EDIT,
+    "images/edits": PROVIDER_EDIT_MODE_EDIT,
+    "chat": PROVIDER_EDIT_MODE_COMPLETIONS,
+    "completion": PROVIDER_EDIT_MODE_COMPLETIONS,
+    "completions": PROVIDER_EDIT_MODE_COMPLETIONS,
+    "chat_completion": PROVIDER_EDIT_MODE_COMPLETIONS,
+    "chat_completions": PROVIDER_EDIT_MODE_COMPLETIONS,
+    "chat-completions": PROVIDER_EDIT_MODE_COMPLETIONS,
+    "chat/completions": PROVIDER_EDIT_MODE_COMPLETIONS,
 }
 CHAT_COMPLETION_IMAGE_OMITTED_KEYS = {
     "prompt",
@@ -186,6 +237,7 @@ ENV_CONFIG_KEYS = {
     "ADMIN_PASSWORD",
     "APP_SESSION_SECRET",
     "SYSTEMD_UNIT",
+    "DEBUG_LOG_SERVICES",
 }
 SECRET_ENV_KEYS = {
     "OPENAI_API_KEY",
@@ -260,8 +312,12 @@ class ProviderConfig(BaseModel):
     base_url: str
     api_key: str
     model: str = ""
+    generate_model: str = ""
+    edit_model: str = ""
     note: str = ""
     api_type: Literal["images", "chat_completions"] = PROVIDER_API_IMAGES
+    generate_mode: Literal["generate", "completions"] = PROVIDER_GENERATE_MODE_GENERATE
+    edit_mode: Literal["edit", "completions"] = PROVIDER_EDIT_MODE_EDIT
 
 
 def _log_event(event: str, **fields: Any) -> None:
@@ -339,6 +395,10 @@ def _provider_url(provider: ProviderConfig, path: str) -> str:
     return f"{provider.base_url.rstrip('/')}/{path.lstrip('/')}"
 
 
+def _provider_models_url(base_url: str) -> str:
+    return f"{base_url.rstrip('/')}/models"
+
+
 def _default_provider_config() -> ProviderConfig:
     return ProviderConfig(
         id="default",
@@ -347,6 +407,8 @@ def _default_provider_config() -> ProviderConfig:
         api_key=settings.api_key,
         note="Default provider from OPENAI_BASE_URL / OPENAI_API_KEY",
         api_type=PROVIDER_API_IMAGES,
+        generate_mode=PROVIDER_GENERATE_MODE_GENERATE,
+        edit_mode=PROVIDER_EDIT_MODE_EDIT,
     )
 
 
@@ -362,6 +424,56 @@ def _safe_provider_api_type(value: Any) -> Literal["images", "chat_completions"]
     text = str(value or "").strip().lower().replace("-", "_")
     api_type = PROVIDER_API_TYPE_ALIASES.get(text, PROVIDER_API_IMAGES)
     if api_type == PROVIDER_API_CHAT_COMPLETIONS:
+        return PROVIDER_API_CHAT_COMPLETIONS
+    return PROVIDER_API_IMAGES
+
+
+def _safe_provider_generate_mode(
+    value: Any,
+    api_type: str = PROVIDER_API_IMAGES,
+) -> Literal["generate", "completions"]:
+    text = str(value or "").strip().lower().replace("-", "_")
+    if not text:
+        if api_type == PROVIDER_API_CHAT_COMPLETIONS:
+            return PROVIDER_GENERATE_MODE_COMPLETIONS
+        return PROVIDER_GENERATE_MODE_GENERATE
+    mode = PROVIDER_GENERATE_MODE_ALIASES.get(text)
+    if mode == PROVIDER_GENERATE_MODE_COMPLETIONS:
+        return PROVIDER_GENERATE_MODE_COMPLETIONS
+    if mode == PROVIDER_GENERATE_MODE_GENERATE:
+        return PROVIDER_GENERATE_MODE_GENERATE
+    if api_type == PROVIDER_API_CHAT_COMPLETIONS:
+        return PROVIDER_GENERATE_MODE_COMPLETIONS
+    return PROVIDER_GENERATE_MODE_GENERATE
+
+
+def _safe_provider_edit_mode(
+    value: Any,
+    api_type: str = PROVIDER_API_IMAGES,
+) -> Literal["edit", "completions"]:
+    text = str(value or "").strip().lower().replace("-", "_")
+    if not text:
+        if api_type == PROVIDER_API_CHAT_COMPLETIONS:
+            return PROVIDER_EDIT_MODE_COMPLETIONS
+        return PROVIDER_EDIT_MODE_EDIT
+    mode = PROVIDER_EDIT_MODE_ALIASES.get(text)
+    if mode == PROVIDER_EDIT_MODE_COMPLETIONS:
+        return PROVIDER_EDIT_MODE_COMPLETIONS
+    if mode == PROVIDER_EDIT_MODE_EDIT:
+        return PROVIDER_EDIT_MODE_EDIT
+    if api_type == PROVIDER_API_CHAT_COMPLETIONS:
+        return PROVIDER_EDIT_MODE_COMPLETIONS
+    return PROVIDER_EDIT_MODE_EDIT
+
+
+def _provider_api_type_from_modes(
+    generate_mode: str,
+    edit_mode: str,
+) -> Literal["images", "chat_completions"]:
+    if (
+        generate_mode == PROVIDER_GENERATE_MODE_COMPLETIONS
+        and edit_mode == PROVIDER_EDIT_MODE_COMPLETIONS
+    ):
         return PROVIDER_API_CHAT_COMPLETIONS
     return PROVIDER_API_IMAGES
 
@@ -383,10 +495,35 @@ def _load_provider_configs(raw: str | None = None) -> list[ProviderConfig]:
                 base_url = str(item.get("base_url") or "").strip()
                 api_key = str(item.get("api_key") or "").strip()
                 model = str(item.get("model") or "").strip()
+                generate_model = str(
+                    item.get("generate_model")
+                    or item.get("generation_model")
+                    or item.get("generate_image_model")
+                    or model
+                ).strip()
+                edit_model = str(
+                    item.get("edit_model")
+                    or item.get("edit_image_model")
+                    or model
+                ).strip()
                 note = str(item.get("note") or "").strip()
                 api_type = _safe_provider_api_type(
                     item.get("api_type") or item.get("type") or item.get("mode")
                 )
+                generate_mode = _safe_provider_generate_mode(
+                    item.get("generate_mode")
+                    or item.get("generation_mode")
+                    or item.get("generate_api_type")
+                    or item.get("generate_type"),
+                    api_type,
+                )
+                edit_mode = _safe_provider_edit_mode(
+                    item.get("edit_mode")
+                    or item.get("edit_api_type")
+                    or item.get("edit_type"),
+                    api_type,
+                )
+                api_type = _provider_api_type_from_modes(generate_mode, edit_mode)
                 if not base_url:
                     continue
                 providers.append(
@@ -396,8 +533,12 @@ def _load_provider_configs(raw: str | None = None) -> list[ProviderConfig]:
                         base_url=base_url,
                         api_key=api_key,
                         model=model,
+                        generate_model=generate_model,
+                        edit_model=edit_model,
                         note=note,
                         api_type=api_type,
+                        generate_mode=generate_mode,
+                        edit_mode=edit_mode,
                     )
                 )
     if not providers:
@@ -411,10 +552,32 @@ def _provider_public(provider: ProviderConfig) -> dict[str, Any]:
         "name": provider.name,
         "base_url": provider.base_url,
         "model": provider.model,
+        "generate_model": provider.generate_model,
+        "edit_model": provider.edit_model,
         "note": provider.note,
         "api_type": provider.api_type,
+        "generate_mode": provider.generate_mode,
+        "edit_mode": provider.edit_mode,
         "api_key_configured": bool(provider.api_key),
     }
+
+
+def _provider_model_ids(provider_json: Any) -> list[str]:
+    data = provider_json.get("data") if isinstance(provider_json, dict) else provider_json
+    if not isinstance(data, list):
+        return []
+    models: list[str] = []
+    seen: set[str] = set()
+    for item in data:
+        model_id = ""
+        if isinstance(item, dict):
+            model_id = str(item.get("id") or item.get("name") or "").strip()
+        elif isinstance(item, str):
+            model_id = item.strip()
+        if model_id and model_id not in seen:
+            models.append(model_id)
+            seen.add(model_id)
+    return models
 
 
 def _get_provider(provider_id: str | None) -> ProviderConfig:
@@ -585,6 +748,7 @@ def _env_public_value(key: str, values: dict[str, Any]) -> dict[str, Any]:
             "MAX_ACTIVE_JOBS": str(MAX_ACTIVE_JOBS),
             "TRASH_RETENTION_DAYS": str(settings.trash_retention_days),
             "SYSTEMD_UNIT": settings.systemd_unit,
+            "DEBUG_LOG_SERVICES": settings.debug_log_services,
         }
         value = runtime_defaults.get(key, os.getenv(key, ""))
     value = str(value or "")
@@ -596,10 +760,14 @@ def _env_public_value(key: str, values: dict[str, Any]) -> dict[str, Any]:
 def _admin_config_payload() -> dict[str, Any]:
     env_values = dict(dotenv_values(_env_path()))
     raw_providers = str(env_values.get("IMAGE_PROVIDERS") or settings.image_providers or "")
+    raw_debug_log_services = env_values.get("DEBUG_LOG_SERVICES")
+    if raw_debug_log_services is None:
+        raw_debug_log_services = settings.debug_log_services
     return {
         "env_file": str(_env_path()),
         "needs_restart": True,
         "providers": [_provider_public(provider) for provider in _load_provider_configs(raw_providers)],
+        "debug_log_services": _normalize_debug_log_services(raw_debug_log_services),
         "config": {
             key: _env_public_value(key, env_values)
             for key in sorted(ENV_CONFIG_KEYS)
@@ -627,6 +795,182 @@ def _write_env_updates(updates: dict[str, str]) -> None:
     for key in sorted(remaining):
         next_lines.append(f"{key}={_env_encode(remaining[key])}")
     path.write_text("\n".join(next_lines).rstrip() + "\n", encoding="utf-8")
+
+
+def _debug_log_slot_id(slot: int) -> str:
+    return f"log-{slot}"
+
+
+def _safe_debug_log_type(value: Any) -> Literal["systemd", "docker"]:
+    text = str(value or "").strip().lower()
+    if text in {"docker", "container", "docker_container"}:
+        return DEBUG_LOG_TYPE_DOCKER
+    return DEBUG_LOG_TYPE_SYSTEMD
+
+
+def _debug_log_target_key(log_type: str) -> str:
+    return "container" if log_type == DEBUG_LOG_TYPE_DOCKER else "service"
+
+
+def _debug_log_type_label(log_type: str) -> str:
+    return "Docker Container" if log_type == DEBUG_LOG_TYPE_DOCKER else "systemd"
+
+
+def _bool_from_any(value: Any, default: bool = False) -> bool:
+    if isinstance(value, bool):
+        return value
+    if value is None:
+        return default
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on", "enabled"}:
+        return True
+    if text in {"0", "false", "no", "off", "disabled"}:
+        return False
+    return default
+
+
+def _debug_log_target_valid(log_type: str, target: str) -> bool:
+    if not target or target.startswith("-"):
+        return False
+    if log_type == DEBUG_LOG_TYPE_DOCKER:
+        return bool(DEBUG_LOG_DOCKER_TARGET_RE.fullmatch(target))
+    return bool(DEBUG_LOG_SYSTEMD_TARGET_RE.fullmatch(target))
+
+
+def _default_debug_log_services() -> list[dict[str, Any]]:
+    target = settings.systemd_unit.strip()
+    services: list[dict[str, Any]] = []
+    for slot in range(1, DEBUG_LOG_SERVICE_SLOTS + 1):
+        is_primary = slot == 1 and bool(target)
+        services.append(
+            {
+                "id": _debug_log_slot_id(slot),
+                "slot": slot,
+                "name": target if is_primary else f"日志 {slot}",
+                "type": DEBUG_LOG_TYPE_SYSTEMD,
+                "target": target if is_primary else "",
+                "enabled": is_primary,
+            }
+        )
+    return services
+
+
+def _parse_debug_log_service_items(raw: Any) -> list[Any] | None:
+    if raw is None:
+        raw = settings.debug_log_services
+    if isinstance(raw, list):
+        return raw
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, list):
+        return None
+    return data
+
+
+def _normalize_debug_log_services(raw: Any = None) -> list[dict[str, Any]]:
+    parsed = _parse_debug_log_service_items(raw)
+    items = parsed if parsed is not None else _default_debug_log_services()
+    services: list[dict[str, Any]] = []
+    for index in range(DEBUG_LOG_SERVICE_SLOTS):
+        raw_item = items[index] if index < len(items) and isinstance(items[index], dict) else {}
+        slot = index + 1
+        log_type = _safe_debug_log_type(raw_item.get("type"))
+        target = str(
+            raw_item.get("target")
+            or raw_item.get(_debug_log_target_key(log_type))
+            or ""
+        ).strip()
+        name = str(raw_item.get("name") or raw_item.get("label") or "").strip()
+        if len(name) > 80:
+            name = name[:80]
+        target_valid = _debug_log_target_valid(log_type, target)
+        enabled = _bool_from_any(raw_item.get("enabled"), bool(target)) and target_valid
+        if not name:
+            name = target or f"日志 {slot}"
+        services.append(
+            {
+                "id": _debug_log_slot_id(slot),
+                "slot": slot,
+                "name": name,
+                "type": log_type,
+                "target": target,
+                "enabled": enabled,
+                "target_valid": target_valid,
+                "type_label": _debug_log_type_label(log_type),
+            }
+        )
+    return services
+
+
+def _debug_log_services_env_value(services: list[dict[str, Any]]) -> str:
+    payload = [
+        {
+            "name": str(service.get("name") or "").strip(),
+            "type": _safe_debug_log_type(service.get("type")),
+            "target": str(service.get("target") or "").strip(),
+            "enabled": bool(service.get("enabled")),
+        }
+        for service in _normalize_debug_log_services(services)
+    ]
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def _get_debug_log_service(slot_id: str) -> dict[str, Any]:
+    match = re.fullmatch(r"log-([1-4])", str(slot_id or "").strip())
+    if not match:
+        raise HTTPException(status_code=404, detail="Unknown debug log slot")
+    slot = int(match.group(1))
+    return _normalize_debug_log_services()[slot - 1]
+
+
+def _list_docker_containers() -> dict[str, Any]:
+    docker = shutil.which("docker")
+    if not docker:
+        return {
+            "available": False,
+            "containers": [],
+            "error": "当前系统没有 docker，无法读取容器列表。",
+        }
+    try:
+        result = subprocess.run(
+            [docker, "ps", "--format", "{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=8,
+        )
+    except subprocess.TimeoutExpired:
+        return {
+            "available": False,
+            "containers": [],
+            "error": "docker ps 执行超时，请检查 Docker daemon 状态。",
+        }
+    if result.returncode != 0:
+        return {
+            "available": False,
+            "containers": [],
+            "error": result.stderr.strip() or "docker ps 执行失败。",
+        }
+    containers: list[dict[str, str]] = []
+    for line in result.stdout.splitlines():
+        values = (line.split("\t", 3) + ["", "", "", ""])[:4]
+        container_id, name, image, status = values
+        if not name:
+            continue
+        containers.append(
+            {
+                "id": container_id,
+                "name": name,
+                "image": image,
+                "status": status,
+            }
+        )
+    return {"available": True, "containers": containers, "error": ""}
 
 
 def _sse_payload(line: str) -> str:
@@ -713,7 +1057,15 @@ async def _stream_command_lines(
 
 
 def _debug_log_command(source: str) -> tuple[list[str], str]:
-    if source == "journal":
+    service = _get_debug_log_service(source)
+    log_type = service["type"]
+    target = str(service.get("target") or "").strip()
+    if not service.get("enabled"):
+        raise HTTPException(status_code=404, detail="Debug log slot is disabled")
+    if not _debug_log_target_valid(log_type, target):
+        raise HTTPException(status_code=400, detail="Debug log target is invalid")
+
+    if log_type == DEBUG_LOG_TYPE_SYSTEMD:
         journalctl = shutil.which("journalctl")
         if not journalctl:
             return (
@@ -724,7 +1076,7 @@ def _debug_log_command(source: str) -> tuple[list[str], str]:
             [
                 journalctl,
                 "-u",
-                settings.systemd_unit,
+                target,
                 "-n",
                 "200",
                 "-f",
@@ -735,50 +1087,19 @@ def _debug_log_command(source: str) -> tuple[list[str], str]:
             "",
         )
 
-    if source == "cliproxyapi":
-        journalctl = shutil.which("journalctl")
-        if not journalctl:
-            return (
-                ["journalctl"],
-                "当前系统没有 journalctl，cliproxyapi.service 日志只能在 Linux systemd 服务器上查看。",
-            )
-        return (
-            [
-                journalctl,
-                "-u",
-                "cliproxyapi.service",
-                "-n",
-                "200",
-                "-f",
-                "--no-pager",
-                "-o",
-                "short-iso",
-            ],
-            "",
-        )
-
-    if source == "chatgpt2api":
+    if log_type == DEBUG_LOG_TYPE_DOCKER:
         docker = shutil.which("docker")
         if not docker:
             return (
                 ["docker"],
-                "当前系统没有 docker，无法查看 chatgpt2api 容器日志。",
+                "当前系统没有 docker，无法查看 Docker 容器日志。",
             )
         return (
-            [docker, "logs", "--tail", "200", "-f", "chatgpt2api"],
+            [docker, "logs", "--tail", "200", "-f", target],
             "",
         )
 
-    if source == "app":
-        tail = shutil.which("tail")
-        if not tail:
-            return (["tail"], "当前系统没有 tail 命令，无法持续读取 app.log。")
-        return (
-            [tail, "-n", "200", "-F", str(settings.log_dir / "app.log")],
-            "",
-        )
-
-    raise HTTPException(status_code=404, detail="Unknown debug log source")
+    raise HTTPException(status_code=400, detail="Debug log type is invalid")
 
 
 def _history_path() -> Path:
@@ -2269,9 +2590,37 @@ async def update_admin_config(request: Request) -> dict[str, Any]:
             name = str(item.get("name") or provider_id).strip()
             base_url = str(item.get("base_url") or "").strip()
             model = str(item.get("model") or "").strip()
+            generate_model = str(
+                item.get("generate_model")
+                or item.get("generation_model")
+                or item.get("generate_image_model")
+                or model
+            ).strip()
+            edit_model = str(
+                item.get("edit_model")
+                or item.get("edit_image_model")
+                or model
+            ).strip()
+            legacy_model = model or (generate_model if generate_model == edit_model else "")
             note = str(item.get("note") or "").strip()
             api_key = str(item.get("api_key") or "").strip()
-            api_type = _safe_provider_api_type(item.get("api_type"))
+            legacy_api_type = _safe_provider_api_type(
+                item.get("api_type") or item.get("type") or item.get("mode")
+            )
+            generate_mode = _safe_provider_generate_mode(
+                item.get("generate_mode")
+                or item.get("generation_mode")
+                or item.get("generate_api_type")
+                or item.get("generate_type"),
+                legacy_api_type,
+            )
+            edit_mode = _safe_provider_edit_mode(
+                item.get("edit_mode")
+                or item.get("edit_api_type")
+                or item.get("edit_type"),
+                legacy_api_type,
+            )
+            api_type = _provider_api_type_from_modes(generate_mode, edit_mode)
             if not base_url:
                 continue
             if not api_key and provider_id in existing_by_id:
@@ -2282,19 +2631,116 @@ async def update_admin_config(request: Request) -> dict[str, Any]:
                     "name": name,
                     "base_url": base_url,
                     "api_key": api_key,
-                    "model": model,
+                    "model": legacy_model,
+                    "generate_model": generate_model,
+                    "edit_model": edit_model,
                     "note": note,
                     "api_type": api_type,
+                    "generate_mode": generate_mode,
+                    "edit_mode": edit_mode,
                 }
             )
         if provider_updates:
             updates["IMAGE_PROVIDERS"] = json.dumps(provider_updates, ensure_ascii=False)
+    raw_debug_log_services = body.get("debug_log_services")
+    if raw_debug_log_services is not None:
+        if not isinstance(raw_debug_log_services, list):
+            raise HTTPException(
+                status_code=400, detail="debug_log_services must be a list"
+            )
+        updates["DEBUG_LOG_SERVICES"] = _debug_log_services_env_value(
+            raw_debug_log_services
+        )
     if updates:
         _write_env_updates(updates)
         if "IMAGE_PROVIDERS" in updates:
             settings.image_providers = updates["IMAGE_PROVIDERS"]
+        if "DEBUG_LOG_SERVICES" in updates:
+            settings.debug_log_services = updates["DEBUG_LOG_SERVICES"]
         _log_event("admin_config_updated", keys=sorted(updates))
     return {"ok": True, "updated": sorted(updates), **_admin_config_payload()}
+
+
+@app.post("/v1/admin/provider-models")
+async def admin_provider_models(request: Request) -> dict[str, Any]:
+    _require_admin(request)
+    body = await request.json()
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="request body must be an object")
+
+    provider_id = _safe_provider_id(body.get("id"), "")
+    base_url = str(body.get("base_url") or "").strip()
+    api_key = str(body.get("api_key") or "").strip()
+    existing_by_id = {provider.id: provider for provider in _load_provider_configs()}
+    if provider_id in existing_by_id:
+        existing = existing_by_id[provider_id]
+        base_url = base_url or existing.base_url
+        api_key = api_key or existing.api_key
+
+    if not base_url:
+        raise HTTPException(status_code=400, detail="Provider Base URL is required")
+    if not base_url.startswith(("http://", "https://")):
+        raise HTTPException(status_code=400, detail="Provider Base URL must start with http:// or https://")
+
+    headers: dict[str, str] = {}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+
+    provider_url = _provider_models_url(base_url)
+    started_at = time.monotonic()
+    try:
+        async with httpx.AsyncClient(timeout=min(settings.timeout_seconds, 30)) as client:
+            response = await client.get(provider_url, headers=headers)
+        response.raise_for_status()
+        provider_json = response.json()
+    except httpx.HTTPStatusError as exc:
+        detail = _provider_error_detail(exc.response)
+        _log_event(
+            "admin_provider_models_http_error",
+            provider_id=provider_id,
+            status_code=exc.response.status_code,
+            detail=detail,
+            elapsed_ms=_elapsed_ms(started_at),
+        )
+        raise HTTPException(status_code=exc.response.status_code, detail=detail) from exc
+    except httpx.HTTPError as exc:
+        detail = {
+            "error": {
+                "type": exc.__class__.__name__,
+                "message": str(exc) or repr(exc),
+                "hint": "Provider /models request failed. Check Base URL and API Key.",
+            },
+            "elapsed_ms": _elapsed_ms(started_at),
+            "url": provider_url,
+        }
+        _log_event("admin_provider_models_request_error", provider_id=provider_id, detail=detail)
+        raise HTTPException(status_code=502, detail=detail) from exc
+    except ValueError as exc:
+        detail = {
+            "error": {
+                "type": "NonJsonResponse",
+                "message": "Provider /models did not return JSON.",
+            },
+            "elapsed_ms": _elapsed_ms(started_at),
+            "url": provider_url,
+        }
+        _log_event("admin_provider_models_non_json", provider_id=provider_id, detail=detail)
+        raise HTTPException(status_code=502, detail=detail) from exc
+
+    models = _provider_model_ids(provider_json)
+    _log_event(
+        "admin_provider_models_success",
+        provider_id=provider_id,
+        model_count=len(models),
+        elapsed_ms=_elapsed_ms(started_at),
+    )
+    return {"ok": True, "models": models, "model_count": len(models)}
+
+
+@app.get("/v1/admin/docker-containers")
+def admin_docker_containers(request: Request) -> dict[str, Any]:
+    _require_admin(request)
+    return _list_docker_containers()
 
 
 @app.post("/v1/admin/restart")
@@ -2331,6 +2777,19 @@ async def debug_logs(source: str, request: Request) -> StreamingResponse:
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@app.get("/v1/debug/log-services")
+def debug_log_services(request: Request) -> dict[str, Any]:
+    _require_auth(request)
+    return {
+        "services": [
+            service
+            for service in _normalize_debug_log_services()
+            if service.get("enabled")
+        ],
+        "slots": DEBUG_LOG_SERVICE_SLOTS,
+    }
 
 
 @app.get("/files/{filename}")
@@ -3843,10 +4302,11 @@ async def _execute_generation(
         "Content-Type": "application/json",
     }
     provider_payload = _provider_payload(payload)
-    if provider.model:
-        provider_payload["model"] = provider.model
-        payload = {**payload, "model": provider.model}
-    uses_chat_completions = provider.api_type == PROVIDER_API_CHAT_COMPLETIONS
+    provider_model = provider.generate_model or provider.model
+    if provider_model:
+        provider_payload["model"] = provider_model
+        payload = {**payload, "model": provider_model}
+    uses_chat_completions = provider.generate_mode == PROVIDER_GENERATE_MODE_COMPLETIONS
     provider_url = _provider_url(
         provider,
         "chat/completions" if uses_chat_completions else "images/generations",
@@ -3863,6 +4323,8 @@ async def _execute_generation(
         provider_id=provider.id,
         provider_name=provider.name,
         provider_api_type=provider.api_type,
+        provider_generate_mode=provider.generate_mode,
+        provider_generate_model=provider_model,
         provider_url=provider_url,
         payload=payload,
         client=client_host,
@@ -3933,6 +4395,10 @@ async def _execute_generation(
     provider_json = _combine_provider_responses(provider_responses, provider_payload, len(images))
     provider_json["provider_id"] = provider.id
     provider_json["provider_name"] = provider.name
+    provider_json["provider_generate_mode"] = provider.generate_mode
+    provider_json["provider_edit_mode"] = provider.edit_mode
+    provider_json["provider_generate_model"] = provider.generate_model
+    provider_json["provider_edit_model"] = provider.edit_model
 
     _save_images_to_history(images, provider_json, payload, prompt, "generate")
 
@@ -3980,10 +4446,11 @@ async def _execute_edit(
 
     headers = {"Authorization": f"Bearer {provider.api_key}"}
     provider_payload = _provider_payload(payload)
-    if provider.model:
-        provider_payload["model"] = provider.model
-        payload = {**payload, "model": provider.model}
-    uses_chat_completions = provider.api_type == PROVIDER_API_CHAT_COMPLETIONS
+    provider_model = provider.edit_model or provider.model
+    if provider_model:
+        provider_payload["model"] = provider_model
+        payload = {**payload, "model": provider_model}
+    uses_chat_completions = provider.edit_mode == PROVIDER_EDIT_MODE_COMPLETIONS
     provider_url = _provider_url(
         provider,
         "chat/completions" if uses_chat_completions else "images/edits",
@@ -4024,6 +4491,8 @@ async def _execute_edit(
         provider_id=provider.id,
         provider_name=provider.name,
         provider_api_type=provider.api_type,
+        provider_edit_mode=provider.edit_mode,
+        provider_edit_model=provider_model,
         provider_url=provider_url,
         payload=payload,
         files=_multipart_file_summary(files),
@@ -4059,6 +4528,10 @@ async def _execute_edit(
             )
     provider_json["provider_id"] = provider.id
     provider_json["provider_name"] = provider.name
+    provider_json["provider_generate_mode"] = provider.generate_mode
+    provider_json["provider_edit_mode"] = provider.edit_mode
+    provider_json["provider_generate_model"] = provider.generate_model
+    provider_json["provider_edit_model"] = provider.edit_model
 
     usable_images = [image for image in images if image.file or image.url]
     if not usable_images:
