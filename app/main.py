@@ -1296,11 +1296,21 @@ def _normalize_galleries(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
         seen_ids.add(gallery_id)
         if gallery_id == DEFAULT_GALLERY_ID:
             has_default = True
+        raw_position = record.get("position")
+        position: float | None = None
+        if raw_position is not None:
+            try:
+                parsed_position = float(raw_position)
+            except (TypeError, ValueError):
+                parsed_position = 0.0
+            if parsed_position > 0:
+                position = parsed_position
         normalized.append(
             {
                 "id": gallery_id,
                 "name": name,
                 "created_at": created_at,
+                "_position": position,
             }
         )
         password_hash = str(record.get("password_hash") or "").strip()
@@ -1316,16 +1326,32 @@ def _normalize_galleries(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "id": DEFAULT_GALLERY_ID,
                 "name": DEFAULT_GALLERY_NAME,
                 "created_at": now,
+                "_position": None,
             },
         )
-    # Default gallery first, then by created_at ascending.
-    normalized.sort(
-        key=lambda item: (
-            0 if item["id"] == DEFAULT_GALLERY_ID else 1,
-            _safe_int(item.get("created_at")),
-            str(item.get("name") or ""),
+    has_custom_order = any(item.get("_position") is not None for item in normalized)
+    if has_custom_order:
+        normalized.sort(
+            key=lambda item: (
+                0 if item.get("_position") is not None else 1,
+                _safe_float(item.get("_position"), float(_safe_int(item.get("created_at")))),
+                _safe_int(item.get("created_at")),
+                str(item.get("name") or ""),
+            )
         )
-    )
+    else:
+        # First-run migration keeps the old behavior: default gallery first,
+        # then by created_at ascending. Future loads honor saved positions.
+        normalized.sort(
+            key=lambda item: (
+                0 if item["id"] == DEFAULT_GALLERY_ID else 1,
+                _safe_int(item.get("created_at")),
+                str(item.get("name") or ""),
+            )
+        )
+    for index, item in enumerate(normalized, start=1):
+        item["position"] = index
+        item.pop("_position", None)
     return normalized
 
 
@@ -1351,6 +1377,7 @@ def _gallery_public(
         "id": gallery.get("id", ""),
         "name": gallery.get("name", ""),
         "created_at": _safe_int(gallery.get("created_at")),
+        "position": _safe_float(gallery.get("position")),
         "password_protected": password_protected,
         "unlocked": unlocked,
         "unlock_expires_at": (
@@ -2878,6 +2905,10 @@ async def create_gallery(request: Request, response: Response) -> dict[str, Any]
             "id": gallery_id,
             "name": name,
             "created_at": int(time.time()),
+            "position": max(
+                [_safe_float(gallery.get("position")) for gallery in galleries] or [0.0]
+            )
+            + 1.0,
         }
         if password:
             new_gallery["password_hash"] = _gallery_password_hash(password)
@@ -2893,6 +2924,61 @@ async def create_gallery(request: Request, response: Response) -> dict[str, Any]
         password_protected=bool(password),
     )
     return _gallery_public(new_gallery, request, force_unlocked=bool(password))
+
+
+@app.post("/v1/galleries/reorder")
+async def reorder_galleries(request: Request) -> dict[str, Any]:
+    _require_auth(request)
+    body = await request.json()
+    raw_ids = (
+        body.get("ordered_ids")
+        or body.get("gallery_ids")
+        or body.get("ids")
+    )
+    if not isinstance(raw_ids, list):
+        raise HTTPException(status_code=400, detail="ordered_ids must be a list")
+
+    ordered_ids: list[str] = []
+    seen_ids: set[str] = set()
+    for item in raw_ids:
+        gallery_id = _safe_provider_id(item, "")
+        if not gallery_id:
+            continue
+        if gallery_id in seen_ids:
+            raise HTTPException(status_code=400, detail="ordered_ids must be unique")
+        ordered_ids.append(gallery_id)
+        seen_ids.add(gallery_id)
+    if not ordered_ids:
+        raise HTTPException(status_code=400, detail="ordered_ids cannot be empty")
+
+    path = _galleries_path()
+    with _json_file_lock(path, exclusive=True):
+        galleries = _normalize_galleries(_read_json_list_unlocked(path))
+        existing_ids = {gallery["id"] for gallery in galleries}
+        unknown_ids = [gallery_id for gallery_id in ordered_ids if gallery_id not in existing_ids]
+        if unknown_ids:
+            raise HTTPException(
+                status_code=400,
+                detail=f"unknown gallery ids: {unknown_ids[:5]}",
+            )
+        next_order = ordered_ids + [
+            gallery["id"] for gallery in galleries if gallery["id"] not in seen_ids
+        ]
+        position_by_id = {
+            gallery_id: float(index)
+            for index, gallery_id in enumerate(next_order, start=1)
+        }
+        for gallery in galleries:
+            gallery["position"] = position_by_id[gallery["id"]]
+        galleries = _normalize_galleries(galleries)
+        _write_json_list_unlocked(path, galleries)
+
+    _log_event("galleries_reordered", ordered_ids=next_order)
+    return {
+        "ok": True,
+        "galleries": [_gallery_public(gallery, request) for gallery in galleries],
+        "default_gallery_id": DEFAULT_GALLERY_ID,
+    }
 
 
 @app.post("/v1/galleries/{gallery_id}/unlock")

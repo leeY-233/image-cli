@@ -14,6 +14,7 @@
 - 本地取消：前端和 API 都支持取消本地 Job；如果请求已经发给上游，provider 仍可能继续完成。
 - 历史记录：生成历史和编辑历史写入同一个 `history.json`，通过 `operation` 字段区分，前端会根据当前模式自动切换展示。
 - 画廊密码：创建或编辑画廊时可设置密码；受保护画廊需要解锁后才能查看、生成、编辑、移动、下载或删除其中内容，解锁有效期为 7 天。
+- 画廊排序：主页画廊胶囊支持拖拽自定义顺序，刷新后仍按保存的顺序显示。
 - 历史操作：支持查看、打开原图、下载、批量下载 ZIP、批量删除；生成历史和编辑历史都可以一键进入再次编辑。
 - 历史元数据：记录图片文件大小、图片宽高规格、请求质量、实际质量、输出格式和状态。
 - 文件保护：历史超过上限清理旧记录时，如果旧图片仍被 Job 或其他历史引用，会保留本地文件避免详情失效。
@@ -493,6 +494,11 @@ curl -X POST http://127.0.0.1:8000/v1/galleries/GALLERY_ID/unlock \
   -c cookies.txt \
   -H "Content-Type: application/json" \
   -d '{"password":"gallery-password"}'
+
+curl -X POST http://127.0.0.1:8000/v1/galleries/reorder \
+  -b cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{"ordered_ids":["gallery_id_1","default","gallery_id_2"]}'
 
 curl -X PATCH http://127.0.0.1:8000/v1/galleries/GALLERY_ID \
   -b cookies.txt \

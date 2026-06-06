@@ -840,7 +840,21 @@
         display: inline-flex;
         align-items: center;
         gap: 5px;
+        user-select: none;
+        touch-action: pan-x;
         transition: border-color 0.14s ease, background-color 0.14s ease, color 0.14s ease, box-shadow 0.14s ease, transform 0.14s ease;
+      }
+      .gallery-tabs.is-reordering .gallery-tab {
+        cursor: grabbing;
+      }
+      .gallery-tabs.is-saving .gallery-tab {
+        cursor: progress;
+      }
+      .gallery-tab.gallery-tab-dragging {
+        opacity: 0.78;
+        transform: translateY(-1px) scale(0.98);
+        box-shadow: 0 12px 28px -18px rgba(0, 0, 0, 0.72), 0 0 0 3px var(--accent-glow, rgba(139, 92, 246, 0.18));
+        z-index: 2;
       }
       .gallery-tab-label {
         min-width: 0;
@@ -3626,6 +3640,12 @@
       const renameGalleryBtn = document.querySelector("#renameGalleryBtn");
       const deleteGalleryBtn = document.querySelector("#deleteGalleryBtn");
       const DEFAULT_GALLERY_ID = "default";
+      const GALLERY_REORDER_MOUSE_THRESHOLD = 6;
+      const GALLERY_REORDER_TOUCH_HOLD_MS = 260;
+      const GALLERY_REORDER_TOUCH_TOLERANCE = 8;
+      let galleryReorderState = null;
+      let galleryReorderJustFinished = false;
+      let galleryOrderSaving = false;
 
       const uiDialogEl = document.querySelector("#uiDialog");
       const uiDialogForm = document.querySelector("#uiDialogForm");
@@ -4004,6 +4024,152 @@
         else galleries.push(updated);
         renderGalleryTabs();
       }
+      function galleryIdsFromTabs() {
+        if (!galleryTabs) return galleries.map(gallery => gallery.id);
+        return [...galleryTabs.querySelectorAll(".gallery-tab")]
+          .map(tab => tab.dataset.galleryId || "")
+          .filter(Boolean);
+      }
+      function syncGalleriesFromTabs() {
+        const ids = galleryIdsFromTabs();
+        if (!ids.length) return;
+        const byId = new Map(galleries.map(gallery => [gallery.id, gallery]));
+        galleries = [
+          ...ids.map((id, index) => ({ ...byId.get(id), position: index + 1 })).filter(gallery => gallery.id),
+          ...galleries.filter(gallery => !ids.includes(gallery.id)),
+        ];
+      }
+      function setGalleryOrderSaving(saving) {
+        galleryOrderSaving = saving;
+        if (galleryTabs) galleryTabs.classList.toggle("is-saving", saving);
+      }
+      async function saveGalleryOrder() {
+        const orderedIds = galleries.map(gallery => gallery.id).filter(Boolean);
+        if (orderedIds.length < 2) return;
+        setGalleryOrderSaving(true);
+        try {
+          const res = await fetch("/v1/galleries/reorder", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ordered_ids: orderedIds }),
+          });
+          if (!res.ok) {
+            const error = await responseError(res);
+            throw new Error(error.message);
+          }
+          const data = await res.json();
+          if (Array.isArray(data.galleries)) {
+            galleries = data.galleries;
+            renderGalleryTabs();
+          }
+        } catch (error) {
+          uiAlert(`画廊排序保存失败：${error.message}`, { title: "排序保存失败" });
+          await loadGalleries();
+        } finally {
+          setGalleryOrderSaving(false);
+        }
+      }
+      function activateGalleryReorder(state, x, y) {
+        if (!state || galleryReorderState !== state || state.active) return;
+        state.active = true;
+        state.button.classList.add("gallery-tab-dragging");
+        state.button.setAttribute("aria-grabbed", "true");
+        if (galleryTabs) galleryTabs.classList.add("is-reordering");
+        try { state.button.setPointerCapture(state.pointerId); } catch (_) {}
+        reorderGalleryTabAtPoint(state.button, x, y);
+      }
+      function cleanupGalleryReorder(state, wasActive) {
+        if (state?.holdTimer) clearTimeout(state.holdTimer);
+        if (state?.button) {
+          state.button.classList.remove("gallery-tab-dragging");
+          state.button.removeAttribute("aria-grabbed");
+          try { state.button.releasePointerCapture(state.pointerId); } catch (_) {}
+        }
+        if (galleryTabs) galleryTabs.classList.remove("is-reordering");
+        galleryReorderState = null;
+        if (wasActive) {
+          galleryReorderJustFinished = true;
+          setTimeout(() => { galleryReorderJustFinished = false; }, 120);
+        }
+      }
+      function reorderGalleryTabAtPoint(draggedTab, x, y) {
+        if (!galleryTabs || !draggedTab) return;
+        const rawTarget = document.elementFromPoint(x, y);
+        const target = rawTarget?.closest?.(".gallery-tab");
+        if (!target || target === draggedTab || !galleryTabs.contains(target)) return;
+        const rect = target.getBoundingClientRect();
+        const insertBeforeTarget = x < rect.left + rect.width / 2;
+        if (insertBeforeTarget) {
+          galleryTabs.insertBefore(draggedTab, target);
+        } else {
+          galleryTabs.insertBefore(draggedTab, target.nextSibling);
+        }
+      }
+      function startGalleryTabReorder(button, event) {
+        if (!galleryTabs || galleryOrderSaving || galleries.length < 2) return;
+        if (event.pointerType === "mouse" && event.button !== 0) return;
+        const state = {
+          button,
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          active: false,
+          isTouch: event.pointerType !== "mouse",
+          holdTimer: null,
+        };
+        galleryReorderState = state;
+        if (!state.isTouch && event.cancelable) event.preventDefault();
+        if (state.isTouch) {
+          state.holdTimer = setTimeout(() => {
+            activateGalleryReorder(state, state.startX, state.startY);
+          }, GALLERY_REORDER_TOUCH_HOLD_MS);
+        }
+        function stopListening() {
+          document.removeEventListener("pointermove", onMove, true);
+          document.removeEventListener("pointerup", onUp, true);
+          document.removeEventListener("pointercancel", onCancel, true);
+        }
+        function cancelInactiveDrag() {
+          stopListening();
+          cleanupGalleryReorder(state, false);
+        }
+        function onMove(ev) {
+          if (galleryReorderState !== state) return;
+          const moved = Math.hypot(ev.clientX - state.startX, ev.clientY - state.startY);
+          if (!state.active) {
+            if (state.isTouch) {
+              if (moved > GALLERY_REORDER_TOUCH_TOLERANCE) cancelInactiveDrag();
+              return;
+            }
+            if (moved > GALLERY_REORDER_MOUSE_THRESHOLD) {
+              activateGalleryReorder(state, ev.clientX, ev.clientY);
+            } else {
+              return;
+            }
+          }
+          if (state.active) {
+            if (ev.cancelable) ev.preventDefault();
+            reorderGalleryTabAtPoint(state.button, ev.clientX, ev.clientY);
+          }
+        }
+        async function onUp(ev) {
+          stopListening();
+          if (galleryReorderState !== state) return;
+          const wasActive = state.active;
+          if (wasActive && ev.cancelable) ev.preventDefault();
+          if (wasActive) syncGalleriesFromTabs();
+          cleanupGalleryReorder(state, wasActive);
+          if (wasActive) await saveGalleryOrder();
+        }
+        function onCancel() {
+          stopListening();
+          cleanupGalleryReorder(state, state.active);
+          renderGalleryTabs();
+        }
+        document.addEventListener("pointermove", onMove, true);
+        document.addEventListener("pointerup", onUp, true);
+        document.addEventListener("pointercancel", onCancel, true);
+      }
       function isGalleryLockedError(data) {
         const detail = data?.detail;
         return !!(
@@ -4225,7 +4391,15 @@
             button.classList.toggle("active", isActive);
             button.setAttribute("aria-selected", isActive ? "true" : "false");
             button.tabIndex = isActive ? 0 : -1;
-            button.addEventListener("click", () => setGallery(gallery.id));
+            button.addEventListener("pointerdown", event => startGalleryTabReorder(button, event));
+            button.addEventListener("click", event => {
+              if (galleryReorderJustFinished) {
+                event.preventDefault();
+                event.stopPropagation();
+                return;
+              }
+              setGallery(gallery.id);
+            });
             return button;
           }));
         }
