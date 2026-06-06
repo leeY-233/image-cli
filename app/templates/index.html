@@ -820,6 +820,7 @@
         align-items: center;
         gap: 6px;
         flex: 0 0 auto;
+        position: relative;
       }
       .gallery-tab {
         flex: 0 0 auto;
@@ -842,19 +843,28 @@
         gap: 5px;
         user-select: none;
         touch-action: pan-x;
-        transition: border-color 0.14s ease, background-color 0.14s ease, color 0.14s ease, box-shadow 0.14s ease, transform 0.14s ease;
+        transition: border-color 0.14s ease, background-color 0.14s ease, color 0.14s ease, box-shadow 0.14s ease, transform 0.16s ease, opacity 0.14s ease, filter 0.14s ease;
       }
       .gallery-tabs.is-reordering .gallery-tab {
         cursor: grabbing;
       }
+      .gallery-tabs.is-reordering .gallery-tab:not(.gallery-tab-dragging) {
+        transform: translateZ(0);
+      }
       .gallery-tabs.is-saving .gallery-tab {
         cursor: progress;
       }
-      .gallery-tab.gallery-tab-dragging {
-        opacity: 0.78;
-        transform: translateY(-1px) scale(0.98);
-        box-shadow: 0 12px 28px -18px rgba(0, 0, 0, 0.72), 0 0 0 3px var(--accent-glow, rgba(139, 92, 246, 0.18));
-        z-index: 2;
+      .gallery-tabs.is-saving::after {
+        content: "";
+        position: absolute;
+        left: 6px;
+        right: 6px;
+        bottom: -4px;
+        height: 2px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, transparent, var(--accent-light, #a78bfa), transparent);
+        animation: galleryOrderSaving 0.9s ease-in-out infinite;
+        pointer-events: none;
       }
       .gallery-tab-label {
         min-width: 0;
@@ -888,6 +898,89 @@
         border-color: var(--accent-light, #a78bfa);
         color: #fff;
         transform: translateY(-1px);
+      }
+      @keyframes galleryDragFloatIn {
+        from { opacity: 0.72; transform: translate3d(var(--gallery-drag-x, 0), var(--gallery-drag-y, 0), 0) scale(0.98); }
+        to { opacity: 0.98; transform: translate3d(var(--gallery-drag-x, 0), var(--gallery-drag-y, 0), 0) scale(1.07); }
+      }
+      @keyframes galleryOrderSaving {
+        0%, 100% { opacity: 0.24; transform: scaleX(0.35); }
+        50% { opacity: 0.95; transform: scaleX(1); }
+      }
+      .gallery-tab.gallery-tab-dragging,
+      .gallery-tab.gallery-tab-dragging.active,
+      .gallery-tab.gallery-tab-dragging:hover,
+      .gallery-tab.gallery-tab-dragging.active:hover {
+        position: relative;
+        background: rgba(139, 92, 246, 0.08);
+        border-color: rgba(167, 139, 250, 0.58);
+        color: transparent;
+        opacity: 1;
+        transform: none;
+        box-shadow: inset 0 0 0 1px rgba(167, 139, 250, 0.34), 0 0 0 3px rgba(139, 92, 246, 0.1);
+      }
+      .gallery-tab.gallery-tab-dragging::after {
+        content: "";
+        position: absolute;
+        inset: 6px 11px;
+        border-radius: 999px;
+        background: linear-gradient(90deg, rgba(167, 139, 250, 0.18), rgba(167, 139, 250, 0.48), rgba(167, 139, 250, 0.18));
+      }
+      .gallery-tab.gallery-tab-dragging .gallery-tab-label,
+      .gallery-tab.gallery-tab-dragging .gallery-tab-lock {
+        opacity: 0;
+      }
+      .gallery-tab-float,
+      .gallery-tab-float:hover,
+      .gallery-tab-float.active,
+      .gallery-tab-float.active:hover {
+        position: fixed;
+        left: 0;
+        top: 0;
+        z-index: 1300;
+        pointer-events: none;
+        cursor: grabbing;
+        opacity: 0.98;
+        color: var(--text);
+        background: linear-gradient(135deg, rgba(39, 39, 42, 0.96), rgba(63, 63, 70, 0.92));
+        border-color: var(--accent-light, #a78bfa);
+        transform: translate3d(var(--gallery-drag-x, 0), var(--gallery-drag-y, 0), 0) scale(1.07);
+        transform-origin: center;
+        box-shadow: 0 20px 42px -16px rgba(0, 0, 0, 0.9), 0 0 0 4px var(--accent-glow, rgba(139, 92, 246, 0.24)), 0 0 26px -10px rgba(167, 139, 250, 0.95);
+        animation: galleryDragFloatIn 0.14s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+        transition: opacity 0.12s ease, box-shadow 0.12s ease;
+        will-change: transform;
+      }
+      .gallery-tab-float.active,
+      .gallery-tab-float.active:hover {
+        color: #fff;
+        background: linear-gradient(135deg, var(--accent, #8b5cf6), var(--accent-light, #a78bfa));
+      }
+      .gallery-tab-float.is-dropping {
+        opacity: 0;
+        transition: opacity 0.12s ease;
+      }
+      .gallery-tab-drop-before,
+      .gallery-tab-drop-after {
+        position: relative;
+      }
+      .gallery-tab-drop-before::before,
+      .gallery-tab-drop-after::before {
+        content: "";
+        position: absolute;
+        top: 4px;
+        bottom: 4px;
+        width: 3px;
+        border-radius: 999px;
+        background: var(--accent-light, #a78bfa);
+        box-shadow: 0 0 0 3px var(--accent-glow, rgba(139, 92, 246, 0.2)), 0 0 14px rgba(167, 139, 250, 0.8);
+        pointer-events: none;
+      }
+      .gallery-tab-drop-before::before {
+        left: -5px;
+      }
+      .gallery-tab-drop-after::before {
+        right: -5px;
       }
       .gallery-tools {
         display: flex;
@@ -4069,9 +4162,40 @@
           setGalleryOrderSaving(false);
         }
       }
+      function positionGalleryDragFloat(state, x, y) {
+        if (!state?.floatButton) return;
+        const left = x - state.floatOffsetX;
+        const top = y - state.floatOffsetY;
+        state.floatButton.style.setProperty("--gallery-drag-x", `${left}px`);
+        state.floatButton.style.setProperty("--gallery-drag-y", `${top}px`);
+      }
+      function clearGalleryDropHints() {
+        if (!galleryTabs) return;
+        galleryTabs.querySelectorAll(".gallery-tab-drop-before, .gallery-tab-drop-after").forEach(tab => {
+          tab.classList.remove("gallery-tab-drop-before", "gallery-tab-drop-after");
+        });
+      }
+      function createGalleryDragFloat(state, x, y) {
+        const rect = state.button.getBoundingClientRect();
+        state.floatOffsetX = Math.max(0, Math.min(rect.width, state.startX - rect.left));
+        state.floatOffsetY = Math.max(0, Math.min(rect.height, state.startY - rect.top));
+        const floatButton = state.button.cloneNode(true);
+        floatButton.classList.remove("gallery-tab-dragging");
+        floatButton.classList.add("gallery-tab-float");
+        floatButton.setAttribute("aria-hidden", "true");
+        floatButton.tabIndex = -1;
+        floatButton.style.width = `${rect.width}px`;
+        floatButton.style.height = `${rect.height}px`;
+        floatButton.style.setProperty("--gallery-drag-x", `${rect.left}px`);
+        floatButton.style.setProperty("--gallery-drag-y", `${rect.top}px`);
+        document.body.append(floatButton);
+        state.floatButton = floatButton;
+        positionGalleryDragFloat(state, x, y);
+      }
       function activateGalleryReorder(state, x, y) {
         if (!state || galleryReorderState !== state || state.active) return;
         state.active = true;
+        createGalleryDragFloat(state, x, y);
         state.button.classList.add("gallery-tab-dragging");
         state.button.setAttribute("aria-grabbed", "true");
         if (galleryTabs) galleryTabs.classList.add("is-reordering");
@@ -4080,6 +4204,13 @@
       }
       function cleanupGalleryReorder(state, wasActive) {
         if (state?.holdTimer) clearTimeout(state.holdTimer);
+        if (state?.floatButton) {
+          const floatButton = state.floatButton;
+          floatButton.classList.add("is-dropping");
+          setTimeout(() => floatButton.remove(), 140);
+          state.floatButton = null;
+        }
+        clearGalleryDropHints();
         if (state?.button) {
           state.button.classList.remove("gallery-tab-dragging");
           state.button.removeAttribute("aria-grabbed");
@@ -4099,6 +4230,8 @@
         if (!target || target === draggedTab || !galleryTabs.contains(target)) return;
         const rect = target.getBoundingClientRect();
         const insertBeforeTarget = x < rect.left + rect.width / 2;
+        clearGalleryDropHints();
+        target.classList.add(insertBeforeTarget ? "gallery-tab-drop-before" : "gallery-tab-drop-after");
         if (insertBeforeTarget) {
           galleryTabs.insertBefore(draggedTab, target);
         } else {
@@ -4149,6 +4282,7 @@
           }
           if (state.active) {
             if (ev.cancelable) ev.preventDefault();
+            positionGalleryDragFloat(state, ev.clientX, ev.clientY);
             reorderGalleryTabAtPoint(state.button, ev.clientX, ev.clientY);
           }
         }
