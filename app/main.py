@@ -3145,6 +3145,7 @@ async def update_gallery(
     name = str(body.get("name") or "").strip() if name_supplied else ""
     password = str(body.get("password") or "")
     clear_password = bool(body.get("clear_password"))
+    current_password = str(body.get("current_password") or "")
     if name_supplied and not name:
         raise HTTPException(status_code=400, detail="画廊名称不能为空")
     if name_supplied and len(name) > MAX_GALLERY_NAME_LENGTH:
@@ -3173,6 +3174,13 @@ async def update_gallery(
                 _require_gallery_unlock_secret()
             if not _is_gallery_unlocked(request, target):
                 raise _gallery_locked_exception(target)
+        if _gallery_has_password(target) and (password or clear_password):
+            if not current_password:
+                raise HTTPException(status_code=400, detail="请输入当前密码")
+            if not _verify_gallery_password(
+                current_password, str(target.get("password_hash") or "")
+            ):
+                raise HTTPException(status_code=401, detail="当前密码不正确")
         if name_supplied:
             if any(
                 gallery["id"] != gallery_id and gallery["name"] == name

@@ -4355,17 +4355,25 @@
         const isProtected = !!gallery?.password_protected;
         let passwordEnabled = isProtected;
         let nameInput;
+        let currentPasswordInput;
+        let currentPasswordField;
         let passwordInput;
         let confirmInput;
         let enableSwitch;
         let passwordFields;
 
+        function updateCurrentPasswordVisibility() {
+          if (!currentPasswordField) return;
+          currentPasswordField.style.display = isProtected ? "" : "none";
+          if (!isProtected) currentPasswordInput.value = "";
+        }
+
         function syncGalleryPasswordControls() {
           if (!enableSwitch || !passwordFields) return;
           enableSwitch.input.checked = passwordEnabled;
           enableSwitch.hintEl.textContent = passwordEnabled
-            ? (isProtected ? "留空表示保留当前密码。" : "填写密码后创建加密画廊。")
-            : (isProtected ? "保存后会移除这个画廊的密码。" : "关闭后不会显示密码输入区。");
+            ? (isProtected ? "留空表示保留当前密码。修改密码需要输入当前密码。" : "填写密码后创建加密画廊。")
+            : (isProtected ? "保存后会移除这个画廊的密码，需要输入当前密码。" : "关闭后不会显示密码输入区。");
           passwordFields.classList.toggle("is-open", passwordEnabled);
           passwordFields.setAttribute("aria-hidden", passwordEnabled ? "false" : "true");
           passwordInput.type = "password";
@@ -4374,6 +4382,7 @@
             passwordInput.value = "";
             confirmInput.value = "";
           }
+          updateCurrentPasswordVisibility();
         }
 
         return openUiDialog({
@@ -4411,11 +4420,25 @@
 
             passwordFields = document.createElement("div");
             passwordFields.className = "gallery-password-fields";
+
+            currentPasswordField = document.createElement("label");
+            currentPasswordField.className = "gallery-form-field";
+            const currentPasswordLabel = document.createElement("span");
+            currentPasswordLabel.className = "gallery-form-label";
+            currentPasswordLabel.textContent = "当前密码";
+            currentPasswordInput = document.createElement("input");
+            currentPasswordInput.className = "gallery-form-input";
+            currentPasswordInput.type = "password";
+            currentPasswordInput.autocomplete = "current-password";
+            currentPasswordInput.placeholder = "修改或清除密码需要验证";
+            currentPasswordField.append(currentPasswordLabel, currentPasswordInput);
+            currentPasswordField.style.display = isProtected ? "" : "none";
+
             const passwordField = document.createElement("label");
             passwordField.className = "gallery-form-field";
             const passwordLabel = document.createElement("span");
             passwordLabel.className = "gallery-form-label";
-            passwordLabel.textContent = "密码";
+            passwordLabel.textContent = isProtected ? "新密码" : "密码";
             passwordInput = document.createElement("input");
             passwordInput.className = "gallery-form-input";
             passwordInput.type = "password";
@@ -4426,7 +4449,7 @@
             confirmField.className = "gallery-form-field";
             const confirmLabel = document.createElement("span");
             confirmLabel.className = "gallery-form-label";
-            confirmLabel.textContent = "确认密码";
+            confirmLabel.textContent = isProtected ? "确认新密码" : "确认密码";
             confirmInput = document.createElement("input");
             confirmInput.className = "gallery-form-input";
             confirmInput.type = "password";
@@ -4440,7 +4463,7 @@
               if (passwordEnabled) passwordInput.focus();
             });
 
-            formEl.append(nameField, switches, passwordFields);
+            formEl.append(nameField, switches, currentPasswordField, passwordFields);
             container.append(formEl);
             syncGalleryPasswordControls();
           },
@@ -4452,7 +4475,12 @@
             const body = {};
             if (!isEdit || name !== gallery.name) body.name = name;
             if (!passwordEnabled) {
-              if (isProtected) body.clear_password = true;
+              if (isProtected) {
+                const current = currentPasswordInput?.value || "";
+                if (!current) return { error: "请输入当前密码", focus: currentPasswordInput };
+                body.clear_password = true;
+                body.current_password = current;
+              }
             } else {
               const password = passwordInput.value;
               const repeated = confirmInput.value;
@@ -4460,6 +4488,11 @@
               if (!password) return { error: "请输入密码", focus: passwordInput };
               if (!repeated) return { error: "请确认密码", focus: confirmInput };
               if (password !== repeated) return { error: "两次输入的密码不一致", focus: confirmInput };
+              if (isProtected) {
+                const current = currentPasswordInput?.value || "";
+                if (!current) return { error: "请输入当前密码", focus: currentPasswordInput };
+                body.current_password = current;
+              }
               body.password = password;
             }
             return body;
