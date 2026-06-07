@@ -146,6 +146,7 @@ DEBUG_LOG_DOCKER_TARGET_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
 DEBUG_LOG_FILE_TAIL_LINES = 200
 DEBUG_LOG_FILE_POLL_SECONDS = 0.75
 DEBUG_LOG_FILE_MAX_PATH_LENGTH = 512
+DEBUG_LOG_HEARTBEAT_SECONDS = 15.0
 SUPPORTED_EDIT_IMAGE_TYPES = {"image/png", "image/jpeg", "image/webp"}
 THUMBNAIL_MAX_EDGE = 1024
 THUMBNAIL_QUALITY = 92
@@ -1000,6 +1001,10 @@ def _sse_event(event: str, data: Any) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+def _sse_heartbeat() -> str:
+    return ": heartbeat\n\n"
+
+
 def _debug_timestamp(ts: int | float | None = None) -> str:
     timestamp = time.localtime(ts if ts is not None else time.time())
     return time.strftime("%Y-%m-%d %H:%M:%S", timestamp)
@@ -1079,6 +1084,7 @@ async def _stream_file_lines(target: str, source: str):
     for line in lines:
         yield _sse_payload(_format_debug_line(line, source))
 
+    idle_seconds = 0.0
     while True:
         await asyncio.sleep(DEBUG_LOG_FILE_POLL_SECONDS)
         try:
@@ -1111,9 +1117,14 @@ async def _stream_file_lines(target: str, source: str):
                 return
             for line in lines:
                 yield _sse_payload(_format_debug_line(line, source))
+            idle_seconds = 0.0
             continue
 
         if stat.st_size == position:
+            idle_seconds += DEBUG_LOG_FILE_POLL_SECONDS
+            if idle_seconds >= DEBUG_LOG_HEARTBEAT_SECONDS:
+                yield _sse_heartbeat()
+                idle_seconds = 0.0
             continue
 
         try:
@@ -1130,6 +1141,7 @@ async def _stream_file_lines(target: str, source: str):
 
         for line in data.decode("utf-8", errors="replace").splitlines():
             yield _sse_payload(_format_debug_line(line, source))
+        idle_seconds = 0.0
 
 
 async def _stream_command_lines(
@@ -1152,13 +1164,21 @@ async def _stream_command_lines(
         yield _sse_event("close", {"reason": "process_start_failed"})
         return
 
+    read_task: asyncio.Task[bytes] | None = None
     try:
         if process.stdout is None:
             yield _sse_payload(_format_debug_line("日志进程没有可读取的输出", source))
             yield _sse_event("close", {"reason": "no_stdout"})
             return
+        read_task = asyncio.create_task(process.stdout.readline())
         while True:
-            line = await process.stdout.readline()
+            done, _ = await asyncio.wait(
+                {read_task}, timeout=DEBUG_LOG_HEARTBEAT_SECONDS
+            )
+            if read_task not in done:
+                yield _sse_heartbeat()
+                continue
+            line = read_task.result()
             if not line:
                 return_code = await process.wait()
                 if return_code:
@@ -1169,7 +1189,14 @@ async def _stream_command_lines(
                 return
             text = line.decode("utf-8", errors="replace").rstrip("\n")
             yield _sse_payload(_format_debug_line(text, source))
+            read_task = asyncio.create_task(process.stdout.readline())
     finally:
+        if read_task is not None and not read_task.done():
+            read_task.cancel()
+            try:
+                await read_task
+            except BaseException:
+                pass
         if process.returncode is None:
             process.terminate()
             try:
