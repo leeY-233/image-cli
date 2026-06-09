@@ -195,11 +195,13 @@ def _save_images_to_history(
     prompt: str,
     operation: str,
     source_file: str | None = None,
+    source_files: list[dict[str, Any]] | None = None,
 ) -> None:
     now = int(time.time())
     requested_quality = str(payload["quality"])
     effective_quality = str(provider_json.get("quality") or payload["quality"])
     gallery_id = str(payload.get("gallery_id") or DEFAULT_GALLERY_ID)
+    source_file_records = [record.copy() for record in (source_files or [])]
     history_records = []
     for image in images:
         if not (image.file or image.url):
@@ -225,6 +227,7 @@ def _save_images_to_history(
                 "gallery_id": gallery_id,
                 "operation": operation,
                 "source_file": source_file,
+                "source_files": source_file_records,
                 "file_size_bytes": metadata["file_size_bytes"],
                 "image_width": metadata["image_width"],
                 "image_height": metadata["image_height"],
@@ -264,6 +267,7 @@ def _save_failure_to_history(
                 "gallery_id": str(payload.get("gallery_id") or DEFAULT_GALLERY_ID),
                 "operation": job.get("operation") or "generate",
                 "source_file": edit_inputs.get("source_file"),
+                "source_files": edit_inputs.get("source_files") or [],
                 "source_history_id": edit_inputs.get("source_history_id"),
                 "status": "failed",
                 "error": _redact_large_payloads(error),
@@ -272,6 +276,44 @@ def _save_failure_to_history(
             }
         ]
     )
+
+def _source_file_records_from_images(
+    source_images: list[dict[str, str | bytes]],
+) -> list[dict[str, str]]:
+    records: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for source_image in source_images:
+        file_url = str(source_image.get("file") or "")
+        if not file_url.startswith("/files/") or file_url in seen:
+            continue
+        seen.add(file_url)
+        records.append(
+            {
+                "file": file_url,
+                "filename": str(source_image.get("filename") or ""),
+                "content_type": str(source_image.get("content_type") or "image/png"),
+            }
+        )
+    return records
+
+def _save_uploaded_source_copies(
+    source_images: list[dict[str, str | bytes]],
+) -> list[dict[str, str]]:
+    records: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for source_image in source_images:
+        file_url = _save_uploaded_source_copy(source_image)
+        if not file_url or file_url in seen:
+            continue
+        seen.add(file_url)
+        records.append(
+            {
+                "file": file_url,
+                "filename": str(source_image.get("filename") or ""),
+                "content_type": str(source_image.get("content_type") or "image/png"),
+            }
+        )
+    return records
 
 def _append_images_with_stable_indexes(
     target: list[GeneratedImage], source: list[GeneratedImage]
@@ -512,13 +554,19 @@ def _chat_completion_edit_messages(
     instruction = (
         f"{prompt.strip()}\n\n"
         "Edit the attached source image(s) according to the instruction. "
-        "Use the image attachments as the visual source/reference."
+        "Use the image attachments as the visual source/reference. "
+        "The source images are attached in numbered order, so references like "
+        "first image or second image map to Source image 1 or Source image 2. "
+        "Preserve this numbered mapping exactly; do not swap the roles of the source images. "
+        "If the prompt says to transfer clothing or style from Source image 1 to Source image 2, "
+        "Source image 1 is the donor/reference and Source image 2 is the target/result subject."
     )
     if mask_image is not None:
         instruction += " A mask image is attached after the source image(s); use it as the edit mask if supported."
 
     content: list[dict[str, Any]] = [{"type": "text", "text": instruction}]
-    for source_image in source_images:
+    for index, source_image in enumerate(source_images, start=1):
+        content.append({"type": "text", "text": f"Source image {index}:"})
         image_part = _chat_completion_image_part(source_image)
         if image_part is not None:
             content.append(image_part)
@@ -1194,8 +1242,11 @@ async def _execute_edit(
         raise HTTPException(status_code=502, detail=detail)
     images = usable_images
 
+    source_file_records = _source_file_records_from_images(source_images)
+    if not source_file_records:
+        source_file_records = _save_uploaded_source_copies(source_images)
     source_file = source_file or (
-        _save_uploaded_source_copy(source_images[0]) if source_images else None
+        source_file_records[0]["file"] if source_file_records else None
     )
     _save_images_to_history(
         images,
@@ -1204,6 +1255,7 @@ async def _execute_edit(
         str(payload["prompt"]),
         "edit",
         source_file=source_file,
+        source_files=source_file_records,
     )
 
     _log_event(
@@ -1244,7 +1296,7 @@ async def _run_generation_job(job_id: str) -> None:
         return
     started_at = time.monotonic()
     operation = str(job.get("operation") or "generate")
-    succeeded = False
+    preserve_edit_source_files = False
     _update_job(job_id, status="running", started_at=int(time.time()))
     _log_event(
         "job_running",
@@ -1301,6 +1353,8 @@ async def _run_generation_job(job_id: str) -> None:
         raise
     except HTTPException as exc:
         _save_failure_to_history(job_id, job, exc.detail, exc.status_code)
+        if operation == "edit":
+            preserve_edit_source_files = True
         _update_job(
             job_id,
             status="failed",
@@ -1319,6 +1373,8 @@ async def _run_generation_job(job_id: str) -> None:
     except Exception as exc:
         detail = {"error": {"type": exc.__class__.__name__, "message": str(exc) or repr(exc)}}
         _save_failure_to_history(job_id, job, detail, 500)
+        if operation == "edit":
+            preserve_edit_source_files = True
         _update_job(
             job_id,
             status="failed",
@@ -1329,7 +1385,8 @@ async def _run_generation_job(job_id: str) -> None:
         )
         _log_event("job_failed_unexpected", job_id=job_id, request_id=job_id, detail=detail)
     else:
-        succeeded = True
+        if operation == "edit":
+            preserve_edit_source_files = True
         _update_job(
             job_id,
             status="succeeded",
@@ -1340,7 +1397,7 @@ async def _run_generation_job(job_id: str) -> None:
         _log_event("job_succeeded", job_id=job_id, request_id=job_id, operation=operation)
     finally:
         if operation == "edit":
-            _cleanup_edit_job_files(job, preserve_primary_source=succeeded)
+            _cleanup_edit_job_files(job, preserve_source_files=preserve_edit_source_files)
         JOB_TASKS.pop(job_id, None)
 
 async def _post_with_retry(

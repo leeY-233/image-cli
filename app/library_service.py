@@ -713,6 +713,7 @@ def _history_public(record: dict[str, Any]) -> dict[str, Any]:
         "position": _safe_float(record.get("position"), float(_safe_int(record.get("created_at")))),
         "operation": record.get("operation", "generate"),
         "source_file": record.get("source_file"),
+        "source_files": record.get("source_files") if isinstance(record.get("source_files"), list) else [],
         "source_history_id": record.get("source_history_id"),
         "status": record.get("status", "succeeded"),
         "error": record.get("error"),
@@ -793,21 +794,25 @@ def _collect_file_urls(value: Any) -> set[str]:
     return set()
 
 def _job_file_references() -> set[str]:
-    return set().union(*(_collect_file_urls(job.get("result")) for job in _load_jobs()))
+    return set().union(*(_collect_file_urls(job) for job in _load_jobs()))
 
 def _record_file_urls(record: dict[str, Any]) -> set[str]:
-    return {
+    urls = {
         str(record.get(key) or "")
         for key in ("file", "source_file")
         if str(record.get(key) or "").startswith("/files/")
     }
+    urls.update(_collect_file_urls(record.get("source_files")))
+    return urls
 
 def _record_access_file_urls(record: dict[str, Any]) -> set[str]:
-    return {
+    urls = {
         str(record.get(key) or "")
         for key in ("file", "source_file", "thumbnail_file")
         if str(record.get(key) or "").startswith("/files/")
     }
+    urls.update(_collect_file_urls(record.get("source_files")))
+    return urls
 
 def _history_file_references(records: list[dict[str, Any]]) -> set[str]:
     return set().union(*(_record_file_urls(record) for record in records))
@@ -858,8 +863,7 @@ def _delete_history_file(
     if thumbnail_url.startswith("/files/"):
         _delete_file_url(thumbnail_url)
 
-    for key in ("file", "source_file"):
-        file_url = str(record.get(key) or "")
+    for file_url in _record_access_file_urls(record) - {thumbnail_url}:
         if not file_url.startswith("/files/") or file_url in seen:
             continue
         seen.add(file_url)

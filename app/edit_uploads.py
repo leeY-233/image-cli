@@ -120,14 +120,14 @@ def _read_persisted_edit_file(file_record: dict[str, Any]) -> dict[str, str | by
         "file": file_url,
     }
 
-def _cleanup_edit_job_files(job: dict[str, Any], preserve_primary_source: bool) -> None:
+def _cleanup_edit_job_files(job: dict[str, Any], preserve_source_files: bool) -> None:
     edit_inputs = job.get("edit_inputs")
     if not isinstance(edit_inputs, dict):
         return
     source_files = edit_inputs.get("source_files")
     if isinstance(source_files, list):
-        for index, source_file in enumerate(source_files):
-            if preserve_primary_source and index == 0:
+        for source_file in source_files:
+            if preserve_source_files:
                 continue
             if isinstance(source_file, dict):
                 _delete_file_url(str(source_file.get("file") or ""))

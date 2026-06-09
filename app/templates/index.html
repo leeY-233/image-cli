@@ -230,42 +230,106 @@
         line-height: 1.45;
       }
       .edit-preview {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(74px, 1fr));
-        gap: 6px;
+        position: absolute;
+        left: 10px;
+        right: 10px;
+        bottom: calc(100% + 10px);
+        z-index: 9;
+        display: flex;
+        gap: 8px;
+        max-width: calc(100% - 20px);
+        overflow-x: auto;
+        overflow-y: visible;
+        padding: 8px;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 16px;
+        background: rgba(24, 24, 27, 0.82);
+        box-shadow: 0 16px 46px rgba(0, 0, 0, 0.32);
+        backdrop-filter: blur(14px) saturate(1.08);
+        -webkit-backdrop-filter: blur(14px) saturate(1.08);
       }
       .edit-preview:empty { display: none; }
       .edit-preview-card {
+        flex: 0 0 74px;
+        width: 74px;
         position: relative;
-        overflow: hidden;
-        border: 1px solid var(--border);
+        overflow: visible;
+        border: 1px solid rgba(255, 255, 255, 0.16);
         border-radius: 12px;
-        background: #fff;
+        background: rgba(255, 255, 255, 0.08);
       }
       .edit-preview-remove {
         position: absolute;
-        top: 5px;
-        right: 5px;
+        top: -7px;
+        right: -7px;
         width: 20px;
         height: 20px;
         display: grid;
         place-items: center;
-        border: 1px solid rgba(194, 65, 12, 0.24);
+        z-index: 2;
+        border: 1px solid var(--danger-border);
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.86);
-        color: var(--danger);
+        background: rgba(24, 24, 27, 0.94);
+        color: #fecaca;
         font-size: 13px;
         font-weight: 900;
         cursor: pointer;
+      }
+      .edit-preview-order-actions {
+        position: absolute;
+        left: 50%;
+        bottom: -8px;
+        z-index: 2;
+        display: flex;
+        gap: 3px;
+        transform: translateX(-50%);
+      }
+      .edit-preview-move {
+        width: 20px;
+        height: 20px;
+        display: grid;
+        place-items: center;
+        border: 1px solid rgba(167, 139, 250, 0.32);
+        border-radius: 999px;
+        background: rgba(24, 24, 27, 0.94);
+        color: #ddd6fe;
+        font-size: 12px;
+        font-weight: 900;
+        line-height: 1;
+        cursor: pointer;
+      }
+      .edit-preview-move:disabled {
+        opacity: 0.32;
+        cursor: default;
+      }
+      .edit-preview-order {
+        position: absolute;
+        top: -7px;
+        left: -7px;
+        z-index: 2;
+        min-width: 20px;
+        height: 20px;
+        display: grid;
+        place-items: center;
+        padding: 0 6px;
+        border: 1px solid rgba(167, 139, 250, 0.45);
+        border-radius: 999px;
+        background: rgba(24, 24, 27, 0.94);
+        color: #ddd6fe;
+        font-size: 11px;
+        font-weight: 900;
+        line-height: 1;
       }
       .edit-preview-card img {
         width: 100%;
         aspect-ratio: 1;
         object-fit: cover;
         display: block;
-        background: #edf2ef;
+        overflow: hidden;
+        border-radius: 11px;
+        background: #27272a;
       }
-      .edit-preview-card span {
+      .edit-preview-card > span:not(.edit-preview-order) {
         display: block;
         padding: 5px 6px;
         color: var(--text-muted);
@@ -281,6 +345,7 @@
         gap: 8px;
       }
       .prompt-area {
+        position: relative;
         flex: 1;
         min-height: 130px;
         display: grid;
@@ -1693,14 +1758,16 @@
       }
       .file-hint { display: none; }
       .edit-preview {
-        grid-column: 1 / -1;
+        left: 10px;
+        right: 10px;
+        bottom: calc(100% + 10px);
         display: flex;
         gap: 8px;
         overflow-x: auto;
       }
       .edit-preview-card {
+        flex-basis: 82px;
         width: 82px;
-        min-width: 82px;
         background: var(--bg-solid-card);
       }
       .workspace {
@@ -2406,41 +2473,6 @@
       .compact-upload {
         cursor: pointer;
       }
-      #uploadSummary {
-        display: block;
-        position: relative;
-        width: 128px;
-        min-height: 31px;
-        padding: 0 8px 0 20px;
-        border: 1px solid rgba(167, 139, 250, 0.28);
-        border-radius: 10px;
-        background: rgba(139, 92, 246, 0.12);
-        color: var(--accent-light);
-        font-size: 11px;
-        font-weight: 800;
-        line-height: 29px;
-        text-transform: none;
-        letter-spacing: 0;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        cursor: pointer;
-      }
-      #uploadSummary::before {
-        content: "";
-        position: absolute;
-        left: 8px;
-        top: 50%;
-        width: 6px;
-        height: 6px;
-        border-radius: 99px;
-        background: var(--accent-light);
-        box-shadow: 0 0 12px rgba(167, 139, 250, 0.7);
-        transform: translateY(-50%);
-      }
-      #uploadSummary[hidden] {
-        display: none;
-      }
       .compact-custom-size {
         flex: 0 0 auto;
         display: inline-flex;
@@ -2515,27 +2547,30 @@
         pointer-events: none !important;
       }
       .edit-preview {
-        display: none !important;
+        display: flex;
+        left: 0;
+        right: 0;
+        bottom: calc(100% + 8px);
         align-items: center;
-        justify-content: flex-end;
+        justify-content: flex-start;
         gap: 6px;
-        max-width: 290px;
+        max-width: min(420px, calc(100vw - 40px));
         overflow-x: auto;
         overflow-y: visible;
-        padding: 1px;
+        padding: 7px;
       }
       .edit-preview:empty { display: none !important; }
       .edit-preview-card {
-        width: 32px;
-        min-width: 32px;
+        flex: 0 0 42px;
+        width: 42px;
         border-radius: 9px;
       }
       .edit-preview-card img {
-        height: 32px;
+        height: 42px;
         aspect-ratio: 1;
         object-fit: cover;
       }
-      .edit-preview-card span { display: none; }
+      .edit-preview-card > span:not(.edit-preview-order) { display: none; }
       .edit-preview-remove {
         top: -5px;
         right: -5px;
@@ -2670,9 +2705,6 @@
         }
         .provider-select {
           width: min(116px, 34vw);
-        }
-        #uploadSummary {
-          width: 112px;
         }
         textarea[name="prompt"] {
           min-height: 50px;
@@ -3323,9 +3355,9 @@
               <input class="file-input" id="editMaskInput" type="file" accept="image/png,image/jpeg,image/webp" />
               <div class="file-hint">Transparent mask areas are usually the editable region. Leave empty for whole-image edits.</div>
             </div>
-            <div class="edit-preview" id="editPreview"></div>
           </div>
           <div class="field prompt-area">
+            <div class="edit-preview" id="editPreview"></div>
             <div class="prompt-head">
               <div class="field-label">Prompt</div>
             </div>
@@ -3408,7 +3440,6 @@
             <label class="compact-upload">
               Upload
             </label>
-            <button class="compact-source-chip" id="uploadSummary" type="button" title="Uploaded source image. Click to clear." hidden></button>
             <label>
               Ratio
               <select id="ratioSelect">
@@ -3674,7 +3705,6 @@
       const qualitySelect = document.querySelector("#qualitySelect");
       const formatSelect = document.querySelector("#formatSelect");
       const countSelect = document.querySelector("#countSelect");
-      const uploadSummary = document.querySelector("#uploadSummary");
       const compactCustomSize = document.querySelector("#compactCustomSize");
       const compactCustomWidth = document.querySelector("#compactCustomWidth");
       const compactCustomHeight = document.querySelector("#compactCustomHeight");
@@ -3982,18 +4012,6 @@
         if (compactResolutionField) compactResolutionField.hidden = isCustomSizeSelected();
         if (compactCustomWidth && compactCustomWidth.value !== customWidth.value) compactCustomWidth.value = customWidth.value;
         if (compactCustomHeight && compactCustomHeight.value !== customHeight.value) compactCustomHeight.value = customHeight.value;
-        if (uploadSummary) {
-          const sourceCount = editSourceFiles.length;
-          uploadSummary.hidden = !sourceCount;
-          if (sourceCount) {
-            const firstName = editSourceFiles[0]?.name || "source image";
-            uploadSummary.textContent = sourceCount > 1 ? `${firstName} +${sourceCount - 1}` : firstName;
-            uploadSummary.title = `${editSourceFiles.map(file => file.name).join("\n")}\nClick to clear uploaded sources.`;
-          } else {
-            uploadSummary.textContent = "";
-            uploadSummary.title = "No uploaded source image.";
-          }
-        }
         requestAnimationFrame(updateCompactOverflow);
       }
       function updateCompactOverflow() {
@@ -4716,17 +4734,22 @@
         editImageInput.files = transfer.files;
       }
       function appendEditSourceFiles(files) {
+        let addedCount = 0;
         if (files.length) editSourceOrigin = null;
         for (const file of files) {
           const duplicate = editSourceFiles.some(item =>
             item.name === file.name && item.size === file.size && item.lastModified === file.lastModified
           );
-          if (!duplicate) editSourceFiles.push(file);
+          if (!duplicate) {
+            editSourceFiles.push(file);
+            addedCount += 1;
+          }
         }
         syncEditImageInput();
         renderEditPreviews();
         if (editSourceFiles.length) setMode("edit");
         syncCompactControls();
+        return addedCount;
       }
       function removeEditSourceFile(index) {
         editSourceFiles.splice(index, 1);
@@ -4735,6 +4758,19 @@
         renderEditPreviews();
         if (!editSourceFiles.length) setMode("generate");
         syncCompactControls();
+      }
+      function moveEditSourceFile(index, direction) {
+        const nextIndex = index + direction;
+        if (nextIndex < 0 || nextIndex >= editSourceFiles.length) return;
+        [editSourceFiles[index], editSourceFiles[nextIndex]] = [editSourceFiles[nextIndex], editSourceFiles[index]];
+        editSourceOrigin = null;
+        syncEditImageInput();
+        renderEditPreviews();
+        syncCompactControls();
+      }
+      function clearEditMask() {
+        editMaskInput.value = "";
+        renderEditPreviews();
       }
       function clearEditInputs() {
         editSourceFiles = [];
@@ -4746,28 +4782,58 @@
         setMode("generate");
         syncCompactControls();
       }
-      function addEditPreview(file, label, index = -1) {
+      function addEditPreview(file, label, marker, onRemove, orderControls = null) {
         const url = URL.createObjectURL(file);
         editPreviewUrls.push(url);
         const card = document.createElement("div");
         card.className = "edit-preview-card";
+        card.title = `${label}: ${file.name}`;
+        const order = document.createElement("span");
+        order.className = "edit-preview-order";
+        order.textContent = marker;
         const img = document.createElement("img");
         img.src = url;
         img.alt = file.name;
         const caption = document.createElement("span");
         caption.textContent = `${label}: ${file.name}`;
-        if (index >= 0) {
-          const remove = document.createElement("button");
-          remove.className = "edit-preview-remove";
-          remove.type = "button";
-          remove.textContent = "\u00d7";
-          remove.title = "Remove image";
-          remove.addEventListener("click", event => {
+        const remove = document.createElement("button");
+        remove.className = "edit-preview-remove";
+        remove.type = "button";
+        remove.textContent = "\u00d7";
+        remove.title = `Remove ${label}`;
+        remove.addEventListener("click", event => {
+          event.preventDefault();
+          event.stopPropagation();
+          onRemove();
+        });
+        card.append(order, remove);
+        if (orderControls) {
+          const actions = document.createElement("div");
+          actions.className = "edit-preview-order-actions";
+          const moveLeft = document.createElement("button");
+          moveLeft.className = "edit-preview-move";
+          moveLeft.type = "button";
+          moveLeft.textContent = "\u2039";
+          moveLeft.title = "Move earlier";
+          moveLeft.disabled = !orderControls.canMoveLeft;
+          moveLeft.addEventListener("click", event => {
             event.preventDefault();
             event.stopPropagation();
-            removeEditSourceFile(index);
+            orderControls.moveLeft();
           });
-          card.append(remove);
+          const moveRight = document.createElement("button");
+          moveRight.className = "edit-preview-move";
+          moveRight.type = "button";
+          moveRight.textContent = "\u203a";
+          moveRight.title = "Move later";
+          moveRight.disabled = !orderControls.canMoveRight;
+          moveRight.addEventListener("click", event => {
+            event.preventDefault();
+            event.stopPropagation();
+            orderControls.moveRight();
+          });
+          actions.append(moveLeft, moveRight);
+          card.append(actions);
         }
         card.append(img, caption);
         editPreview.append(card);
@@ -4775,8 +4841,19 @@
       function renderEditPreviews() {
         clearEditPreviews();
         editPreview.replaceChildren();
-        editSourceFiles.forEach((file, index) => addEditPreview(file, `image ${index + 1}`, index));
-        if (editMaskInput.files[0]) addEditPreview(editMaskInput.files[0], "mask");
+        editSourceFiles.forEach((file, index) => addEditPreview(
+          file,
+          `image ${index + 1}`,
+          String(index + 1),
+          () => removeEditSourceFile(index),
+          {
+            canMoveLeft: index > 0,
+            canMoveRight: index < editSourceFiles.length - 1,
+            moveLeft: () => moveEditSourceFile(index, -1),
+            moveRight: () => moveEditSourceFile(index, 1),
+          }
+        ));
+        if (editMaskInput.files[0]) addEditPreview(editMaskInput.files[0], "mask", "M", clearEditMask);
       }
       function setEditSourceFile(file, origin = null) {
         editSourceFiles = [file];
@@ -4924,10 +5001,6 @@
         requestAnimationFrame(updateCompactOverflow);
       }
       compactControls?.querySelector(".compact-upload")?.addEventListener("click", () => editImageInput.click());
-      uploadSummary?.addEventListener("click", event => {
-        event.preventDefault();
-        clearEditInputs();
-      });
       ratioSelect?.addEventListener("change", () => {
         selectedRatio = ratioSelect.value;
         const customSelected = selectedRatio === "custom";
@@ -5093,7 +5166,36 @@
         }
         if (!imageRes.ok) throw new Error(`Image load failed: HTTP ${imageRes.status}`);
         const blob = await imageRes.blob();
-        return new File([blob], filenameFromSource(src, fallback), { type: blob.type || "image/png" });
+        const modified = Date.parse(imageRes.headers.get("last-modified") || "") || 0;
+        return new File([blob], filenameFromSource(src, fallback), { type: blob.type || "image/png", lastModified: modified });
+      }
+      function sourceFileRecords(record) {
+        const records = Array.isArray(record?.source_files)
+          ? record.source_files.filter(item => item && typeof item === "object" && item.file)
+          : [];
+        if (records.length) return records;
+        return record?.source_file ? [{ file: record.source_file, filename: "edit-source.png" }] : [];
+      }
+      async function restoreEditSourcesFromRecord(record) {
+        const sources = sourceFileRecords(record);
+        if (!sources.length) return false;
+        const restoredFiles = [];
+        for (const [index, source] of sources.entries()) {
+          const fileUrl = source.file || source;
+          const fallback = source.filename || `edit-source-${index + 1}.png`;
+          restoredFiles.push(await loadImageUrlAsFile(fileUrl, fallback));
+        }
+        editSourceFiles = restoredFiles;
+        editSourceOrigin = {
+          source_file: sources[0]?.file || record.source_file || "",
+          source_history_id: record.source_history_id || "",
+        };
+        syncEditImageInput();
+        editMaskInput.value = "";
+        renderEditPreviews();
+        setMode("edit");
+        syncCompactControls();
+        return true;
       }
       async function loadHistoryImageAsFile(record) {
         let detailRes = await fetch(`/v1/history/${record.id}`);
@@ -5116,16 +5218,21 @@
       async function startEditFromHistory(record) {
         if (submit.disabled) return;
         try {
-          const { detail, file, source } = await loadHistoryImageAsFile(record);
+          const { detail, file } = await loadHistoryImageAsFile(record);
+          const hadSources = editSourceFiles.length > 0;
           setMode("edit");
-          setEditSourceFile(file, { source_file: source, source_history_id: detail.id || record.id || "" });
-          promptInput.value = "";
+          const addedCount = appendEditSourceFiles([file]);
+          if (!hadSources) promptInput.value = "";
           promptInput.focus();
+          const sourceCount = editSourceFiles.length;
+          const headline = addedCount
+            ? `Source image ${sourceCount} added.`
+            : "This source image is already selected.";
           result.replaceChildren(Object.assign(document.createElement("div"), {
             className: "empty-state",
-            innerHTML: `<div><strong>Ready to edit this history image.</strong><div style="margin-top:6px;color:var(--text-muted);font-size:12px;">Write an edit prompt, keep the same output options, then run Edit Image.</div></div>`
+            innerHTML: `<div><strong>${headline}</strong><div style="margin-top:6px;color:var(--text-muted);font-size:12px;">Images are sent in the order shown on the thumbnails. Add more sources or run Edit Image.</div></div>`
           }));
-          setStatus("Edit source loaded", "live");
+          setStatus(addedCount ? `Edit source ${sourceCount} added` : "Edit source already selected", "live");
           closeModal();
           activeHistoryRecord = detail;
         } catch (err) {
@@ -5141,16 +5248,12 @@
         closeModal();
         if (record.operation === "edit") clearEditInputs();
         if (record.operation === "edit" && !editSourceFiles.length) {
-          if (record.source_file) {
+          if (sourceFileRecords(record).length) {
             try {
-              const file = await loadImageUrlAsFile(record.source_file, "edit-source.png");
-              setEditSourceFile(file, {
-                source_file: record.source_file,
-                source_history_id: record.source_history_id || "",
-              });
+              await restoreEditSourcesFromRecord(record);
               result.replaceChildren(Object.assign(document.createElement("div"), {
                 className: "empty-state",
-                innerHTML: `<div><strong>Ready to retry this edit.</strong><div style="margin-top:6px;color:var(--text-muted);font-size:12px;">Prompt, options, and the original generated source image have been restored. Review them, then submit when ready.</div></div>`
+                innerHTML: `<div><strong>Ready to retry this edit.</strong><div style="margin-top:6px;color:var(--text-muted);font-size:12px;">Prompt, options, and ${editSourceFiles.length} source image${editSourceFiles.length > 1 ? "s" : ""} have been restored. Review them, then submit when ready.</div></div>`
               }));
               promptInput.focus();
               setStatus("Edit restored", "live");
