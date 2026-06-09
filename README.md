@@ -58,7 +58,7 @@ APP_PASSWORD=你的登录密码
 ADMIN_PASSWORD=你的管理页密码
 APP_SESSION_SECRET=换成一串足够长的随机字符串
 SYSTEMD_UNIT=image-cli
-DEBUG_LOG_SERVICES=[{"name":"Image CLI","type":"file","target":"logs/app.log","enabled":true},{"name":"Chat API","type":"docker","target":"chatgpt2api","enabled":true},{"name":"Proxy API","type":"systemd","target":"cliproxyapi.service","enabled":true},{"name":"备用日志","type":"systemd","target":"","enabled":false}]
+DEBUG_LOG_SERVICES=[{"name":"Image CLI","type":"file","target":"logs/app.log","enabled":true},{"name":"Chat API","type":"docker","target":"grok2api","enabled":true},{"name":"Proxy API","type":"systemd","target":"cliproxyapi.service","enabled":true},{"name":"备用日志","type":"systemd","target":"","enabled":false}]
 ```
 
 启动服务：
